@@ -7,14 +7,14 @@ const Login = () => {
   const [email, setEmail] = useState('mariana.costa@rede.ulbra.br');
   const [error, setError] = useState('');
 
+  const attemptLogin = (value) => {
+    const res = loginWithEmail(value);
+    setError(res.ok ? '' : res.error);
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    const res = loginWithEmail(email);
-    if (!res.ok) {
-      setError(res.error);
-    } else {
-      setError('');
-    }
+    attemptLogin(email);
   };
 
   return (
@@ -122,15 +122,7 @@ const Login = () => {
             </div>
 
             {error && (
-              <div
-                style={{
-                  backgroundColor: 'var(--color-danger-bg)',
-                  color: 'var(--color-danger-text)',
-                  padding: '10px 12px',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                }}
-              >
+              <div role="alert" className="form-error">
                 {error}
               </div>
             )}
@@ -139,7 +131,7 @@ const Login = () => {
               type="button"
               className="btn btn-outline"
               style={{ width: '100%', padding: '11px' }}
-              onClick={() => loginWithEmail(email || 'mariana.costa@rede.ulbra.br')}
+              onClick={() => attemptLogin(email)}
             >
               <ShieldCheck size={18} color="#185266" />
               Entrar com Google Institucional
@@ -168,6 +160,10 @@ const Login = () => {
           >
             <div>• Alunos: utilize sua credencial <strong>@rede.ulbra.br</strong></div>
             <div>• Professores e Técnicos: acesse via <strong>@ulbra.br</strong></div>
+            <div>
+              • Demonstração: use um e-mail cadastrado (ex.: <strong>lucas.almeida@rede.ulbra.br</strong>)
+              ou os botões de acesso rápido abaixo.
+            </div>
           </div>
 
           {/* Acesso Rápido por Perfil (Para validação e demonstração) */}

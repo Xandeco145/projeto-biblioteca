@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Check, AlertTriangle, ArrowRight } from 'lucide-react';
 import { useLibrary } from '../../context/LibraryContext';
 import { BUSINESS_RULES } from '../../data/mockData';
+import { compareBrDates, formatCurrency, shortBrDate } from '../../utils/format';
 
 const AlunoDashboard = () => {
   const {
@@ -17,14 +18,19 @@ const AlunoDashboard = () => {
   const [renewalModalData, setRenewalModalData] = useState(null);
   const [renewalError, setRenewalError] = useState(null);
 
-  const myLoans = loans.filter((l) => l.userId === currentUser.id);
+  const myLoans = loans
+    .filter((l) => l.userId === currentUser.id)
+    .sort((a, b) => compareBrDates(a.dueDate, b.dueDate));
   const myReservations = reservations.filter((r) => r.userId === currentUser.id);
   const myPendingFines = fines.filter(
     (f) => f.userId === currentUser.id && f.status === 'Pendente'
   );
 
   const totalDebt = myPendingFines.reduce((acc, f) => acc + f.amount, 0);
-  const nearestDue = myLoans.length > 0 ? myLoans[0].dueDate.slice(0, 5) : '—';
+  const nearestDue = myLoans.length > 0 ? shortBrDate(myLoans[0].dueDate) : '—';
+  const readyReservations = myReservations.filter((r) => r.status === 'Pronta para retirada');
+  const waitingReservations = myReservations.filter((r) => r.status === 'Em espera');
+  const isBlocked = currentUser.status === 'Suspenso';
 
   const handleRenewClick = (loanId) => {
     const result = renewLoan(loanId);
@@ -34,6 +40,35 @@ const AlunoDashboard = () => {
     } else {
       setRenewalError(result.error);
     }
+  };
+
+  const handleCancelReservation = (res) => {
+    const question =
+      res.status === 'Pronta para retirada'
+        ? `Cancelar a reserva ${res.id} de "${res.bookTitle}"? O exemplar separado será liberado.`
+        : `Sair da fila de espera de "${res.bookTitle}"?`;
+    if (window.confirm(question)) cancelReservation(res.id);
+  };
+
+  const reservationSummary = () => {
+    if (myReservations.length === 0) return 'Nenhuma reserva ativa';
+    const parts = [];
+    if (readyReservations.length > 0) {
+      parts.push(
+        readyReservations.length === 1
+          ? '1 pronta para retirada'
+          : `${readyReservations.length} prontas para retirada`
+      );
+    }
+    if (waitingReservations.length > 0) {
+      const best = Math.min(...waitingReservations.map((r) => r.queuePosition));
+      parts.push(
+        waitingReservations.length === 1
+          ? `${best}º lugar na fila de espera`
+          : `${waitingReservations.length} em fila (melhor posição: ${best}º)`
+      );
+    }
+    return parts.join(' • ');
   };
 
   return (
@@ -48,11 +83,10 @@ const AlunoDashboard = () => {
           {currentUser.department} • Situação:{' '}
           <strong
             style={{
-              color:
-                totalDebt > 0 ? 'var(--color-danger-text)' : 'var(--color-success-text)',
+              color: isBlocked ? 'var(--color-danger-text)' : 'var(--color-success-text)',
             }}
           >
-            {totalDebt > 0 ? 'Pendência Financeira' : 'Regular'}
+            {isBlocked ? `Bloqueado (RF05) — ${currentUser.blockReason}` : 'Regular'}
           </strong>
         </p>
       </div>
@@ -64,9 +98,18 @@ const AlunoDashboard = () => {
           <div className="kpi-value">
             {myLoans.length} {myLoans.length === 1 ? 'exemplar' : 'exemplares'}
           </div>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-success-text)' }}>
+          <div
+            style={{
+              fontSize: '13px',
+              fontWeight: 600,
+              color:
+                myLoans.some((l) => l.daysOverdue > 0)
+                  ? 'var(--color-danger-text)'
+                  : 'var(--color-success-text)',
+            }}
+          >
             {myLoans.length > 0
-              ? `Devolução mais próxima: ${nearestDue} (Limite: ${BUSINESS_RULES.MAX_ACTIVE_LOANS})`
+              ? `Devolução mais próxima: ${nearestDue} (limite: ${BUSINESS_RULES.MAX_ACTIVE_LOANS} livros)`
               : `Limite disponível: ${BUSINESS_RULES.MAX_ACTIVE_LOANS} exemplares`}
           </div>
         </div>
@@ -77,11 +120,7 @@ const AlunoDashboard = () => {
             {myReservations.length} {myReservations.length === 1 ? 'ativa' : 'ativas'}
           </div>
           <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-warning-text)' }}>
-            {myReservations.length > 0
-              ? myReservations[0].status === 'Em espera'
-                ? `${myReservations[0].queuePosition}º lugar na fila de espera`
-                : 'Pronta para retirada no balcão'
-              : 'Nenhuma reserva ativa'}
+            {reservationSummary()}
           </div>
         </div>
 
@@ -94,14 +133,13 @@ const AlunoDashboard = () => {
             className="kpi-value"
             style={totalDebt > 0 ? { color: 'var(--color-danger-text)' } : undefined}
           >
-            R$ {totalDebt.toFixed(2).replace('.', ',')}
+            {formatCurrency(totalDebt)}
           </div>
           <div
             style={{
               fontSize: '13px',
               fontWeight: 600,
-              color:
-                totalDebt > 0 ? 'var(--color-danger-text)' : 'var(--color-success-text)',
+              color: totalDebt > 0 ? 'var(--color-danger-text)' : 'var(--color-success-text)',
             }}
           >
             {totalDebt > 0
@@ -114,6 +152,7 @@ const AlunoDashboard = () => {
       {/* Alerta caso a renovação seja bloqueada por regra de negócio */}
       {renewalError && (
         <div
+          role="alert"
           style={{
             backgroundColor: 'var(--color-danger-bg)',
             border: '1px solid #E5B4B4',
@@ -124,14 +163,18 @@ const AlunoDashboard = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: '12px',
             fontSize: '13.5px',
           }}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <AlertTriangle size={18} />
-            <strong>Operação não permitida:</strong> {renewalError}
+            <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+            <span>
+              <strong>Operação não permitida:</strong> {renewalError}
+            </span>
           </span>
           <button
+            type="button"
             className="btn-ghost"
             style={{ color: 'var(--color-danger-text)', fontWeight: 700 }}
             onClick={() => setRenewalError(null)}
@@ -149,6 +192,8 @@ const AlunoDashboard = () => {
             alignItems: 'center',
             justifyContent: 'space-between',
             marginBottom: '12px',
+            flexWrap: 'wrap',
+            gap: '8px',
           }}
         >
           <h2 className="serif-title" style={{ fontSize: '23px' }}>
@@ -167,8 +212,8 @@ const AlunoDashboard = () => {
             <thead>
               <tr>
                 <th>Título da Obra</th>
-                <th>Data Retirada</th>
-                <th>Data Limite Devolução</th>
+                <th>Data de Retirada</th>
+                <th>Data-Limite de Devolução</th>
                 <th>Renovações</th>
                 <th>Status</th>
                 <th>Ação</th>
@@ -180,6 +225,7 @@ const AlunoDashboard = () => {
                   <td colSpan="6" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)' }}>
                     Você não possui livros emprestados no momento.{' '}
                     <button
+                      type="button"
                       className="btn-ghost"
                       style={{ fontWeight: 700, textDecoration: 'underline' }}
                       onClick={() => setActiveTab('Catálogo')}
@@ -217,13 +263,14 @@ const AlunoDashboard = () => {
                     </td>
                     <td>
                       {loan.daysOverdue > 0 ? (
-                        <span className="badge badge-danger">• Em Atraso ({loan.daysOverdue}d)</span>
+                        <span className="badge badge-danger">• Em atraso ({loan.daysOverdue}d)</span>
                       ) : (
                         <span className="badge badge-success">• No prazo</span>
                       )}
                     </td>
                     <td>
                       <button
+                        type="button"
                         className="btn btn-primary"
                         style={{ padding: '8px 14px', fontSize: '13px' }}
                         onClick={() => handleRenewClick(loan.id)}
@@ -247,12 +294,15 @@ const AlunoDashboard = () => {
             alignItems: 'center',
             justifyContent: 'space-between',
             marginBottom: '12px',
+            flexWrap: 'wrap',
+            gap: '8px',
           }}
         >
           <h2 className="serif-title" style={{ fontSize: '23px' }}>
             Minhas Reservas Solicitadas
           </h2>
           <button
+            type="button"
             className="btn btn-ghost"
             style={{ fontSize: '13px', fontWeight: 600 }}
             onClick={() => setActiveTab('Reservas')}
@@ -301,21 +351,25 @@ const AlunoDashboard = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   {res.status === 'Em espera' ? (
                     <span className="badge badge-warning">
                       {res.queuePosition}º na fila de espera
                     </span>
+                  ) : res.pickupExpired ? (
+                    <span className="badge badge-danger">Prazo de retirada expirado</span>
                   ) : (
                     <span className="badge badge-success">
-                      Pronta para retirada ({res.pickupDeadline})
+                      Pronta para retirada (até {shortBrDate(res.pickupDeadline)} às{' '}
+                      {BUSINESS_RULES.PICKUP_CLOSING_HOUR}h)
                     </span>
                   )}
 
                   <button
+                    type="button"
                     className="btn btn-outline"
                     style={{ padding: '7px 14px', fontSize: '13px' }}
-                    onClick={() => cancelReservation(res.id)}
+                    onClick={() => handleCancelReservation(res)}
                   >
                     Cancelar
                   </button>
@@ -329,7 +383,12 @@ const AlunoDashboard = () => {
       {/* Modal: Renovação Confirmada com Sucesso (Frame 4.4.1 corrigido para +14d e até 5 renovações) */}
       {renewalModalData && (
         <div className="modal-backdrop" onClick={() => setRenewalModalData(null)}>
-          <div className="modal-box success-top" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-box success-top"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '20px' }}>
               <div
                 style={{
@@ -377,7 +436,7 @@ const AlunoDashboard = () => {
                 {renewalModalData.previousDueDate}
               </span>
 
-              <span style={{ color: 'var(--color-text-secondary)' }}>Nova Data Limite:</span>
+              <span style={{ color: 'var(--color-text-secondary)' }}>Nova Data-Limite:</span>
               <div>
                 <span className="badge badge-success" style={{ fontSize: '14px', fontWeight: 700 }}>
                   {renewalModalData.newDueDate}
@@ -402,16 +461,23 @@ const AlunoDashboard = () => {
               }}
             >
               <div>
-                • Você ainda tem direito a mais{' '}
-                <strong>
-                  {BUSINESS_RULES.MAX_RENEWALS - renewalModalData.renewalsCount} renovação(ões)
-                </strong>{' '}
-                consecutiva(s) desta obra.
+                {BUSINESS_RULES.MAX_RENEWALS - renewalModalData.renewalsCount > 0 ? (
+                  <>
+                    • Você ainda tem direito a mais{' '}
+                    <strong>
+                      {BUSINESS_RULES.MAX_RENEWALS - renewalModalData.renewalsCount} renovação(ões)
+                    </strong>{' '}
+                    consecutiva(s) desta obra.
+                  </>
+                ) : (
+                  <>• Esta foi a última renovação permitida para este empréstimo.</>
+                )}
               </div>
-              <div>• A renovação futura depende da ausência de reservas por outros alunos.</div>
+              <div>• A renovação futura depende da ausência de fila de espera por outros leitores.</div>
             </div>
 
             <button
+              type="button"
               className="btn btn-primary"
               style={{ width: '100%', padding: '12px', fontSize: '15px' }}
               onClick={() => setRenewalModalData(null)}

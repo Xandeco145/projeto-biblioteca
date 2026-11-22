@@ -198,9 +198,21 @@ body {
 }
 
 .btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background-color: transparent;
   color: var(--color-deep-teal);
   padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.btn-ghost:disabled {
+  cursor: default;
 }
 
 .btn-ghost:hover:not(:disabled) {
@@ -363,7 +375,46 @@ body {
   font-size: 14px;
   font-weight: 500;
   z-index: 1200;
+  max-width: min(560px, calc(100vw - 48px));
+  line-height: 1.45;
   animation: slideUp 0.25s ease;
+}
+
+.toast-banner.toast-error {
+  background-color: #5C1A1A;
+  border-left-color: #E5B4B4;
+}
+
+/* Linha de tabela vazia (nenhum resultado para a busca/filtro) */
+.empty-row td {
+  text-align: center;
+  padding: 26px 16px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+/* Alerta de erro inline (formulários e ações bloqueadas por regra de negócio) */
+.form-error {
+  background-color: var(--color-danger-bg);
+  border: 1px solid #E5B4B4;
+  color: var(--color-danger-text);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.45;
+}
+
+.form-warning {
+  background-color: var(--color-warning-bg);
+  border: 1px solid #EBC8A4;
+  color: var(--color-warning-text);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 @keyframes slideUp {

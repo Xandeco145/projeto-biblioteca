@@ -1,26 +1,172 @@
-import React, { useState } from 'react';
-import { Download, FileSpreadsheet, ClipboardCheck, Plus } from 'lucide-react';
+import React from 'react';
+import { Download, FileSpreadsheet, ClipboardCheck, Plus, CalendarDays } from 'lucide-react';
 import { useLibrary } from '../../context/LibraryContext';
+import { diffInDays, formatCurrency, formatPercent } from '../../utils/format';
+import { getBookAvailability } from '../../utils/library';
+import { downloadCsv, fileStamp, printDocument } from '../../utils/export';
 
-const TOP_DEMAND_BOOKS = [
-  { title: 'Dom Casmurro', author: 'Machado de Assis', loans: '84 vezes', queue: '12 alunos', rec: 'Adquirir +3 ex.', urgent: true },
-  { title: 'O capital — Livro I', author: 'Karl Marx', loans: '67 vezes', queue: '8 alunos', rec: 'Adquirir +2 ex.', urgent: true },
-  { title: 'Pedagogia da autonomia', author: 'Paulo Freire', loans: '59 vezes', queue: '5 alunos', rec: 'Acervo suficiente', urgent: false },
-  { title: 'Código Limpo (Clean Code)', author: 'Robert C. Martin', loans: '52 vezes', queue: '7 alunos', rec: 'Adquirir +2 ex.', urgent: true },
-  { title: 'Metodologia Científica', author: 'Marconi e Lakatos', loans: '48 vezes', queue: '2 alunos', rec: 'Acervo suficiente', urgent: false },
-];
-
-const INVENTORY_BALANCE = [
-  { label: 'Exemplares nas Estantes (Disponíveis):', value: '3.210 ex.', pct: 84, color: '#1B6B4A' },
-  { label: 'Empréstimos Ativos com Leitores:', value: '542 ex.', pct: 14, color: '#D68C45' },
-  { label: 'Em Reparo / Restauração (Danos):', value: '64 ex.', pct: 4, color: '#525E62' },
-  { label: 'Consulta Local (Não Circulantes):', value: '18 ex.', pct: 2, color: '#185266' },
-  { label: 'Perdas / Extravios Pendentes:', value: '6 ex.', pct: 1, color: '#A62626' },
+const BALANCE_ROWS = [
+  { status: 'Disponível', label: 'Exemplares nas Estantes (Disponíveis):', color: '#1B6B4A' },
+  { status: 'Emprestado', label: 'Empréstimos Ativos com Leitores:', color: '#D68C45' },
+  { status: 'Reservado', label: 'Reservados para Retirada (Balcão):', color: '#9A5512' },
+  { status: 'Em reparo', label: 'Em Reparo / Restauração (Danos):', color: '#525E62' },
+  { status: 'Consulta local', label: 'Consulta Local (Não Circulantes):', color: '#185266' },
+  { status: 'Baixa contábil', label: 'Perdas / Extravios (Baixa Contábil):', color: '#A62626' },
 ];
 
 const Relatorios = () => {
-  const { showToast, setActiveTab } = useLibrary();
-  const [period, setPeriod] = useState('Outubro/2026');
+  const {
+    books,
+    loans,
+    loanHistory,
+    reservations,
+    fines,
+    inventoryItems,
+    today,
+    showToast,
+    setActiveTab,
+  } = useLibrary();
+
+  // ---- Indicadores calculados a partir dos dados do sistema ----
+  const allCopies = books.flatMap((b) => b.copies);
+  const totalCopies = allCopies.length;
+  const countCopies = (status) => allCopies.filter((c) => c.status === status).length;
+  const circulatingCopies = totalCopies - countCopies('Consulta local') - countCopies('Baixa contábil');
+  const occupiedCopies = countCopies('Emprestado') + countCopies('Reservado');
+
+  const checkoutsLast30 = [...loans, ...loanHistory].filter(
+    (l) => diffInDays(l.checkoutDate, today) <= 30
+  ).length;
+  const overdueLoans = loans.filter((l) => l.daysOverdue > 0);
+  const paidFines = fines.filter((f) => f.status === 'Quitada');
+  const pendingFines = fines.filter((f) => f.status === 'Pendente');
+  const revenue = paidFines.reduce((acc, f) => acc + f.amount, 0);
+  const receivable = pendingFines.reduce((acc, f) => acc + f.amount, 0);
+  const turnover = circulatingCopies ? (checkoutsLast30 / circulatingCopies) * 100 : 0;
+  const occupancy = circulatingCopies ? (occupiedCopies / circulatingCopies) * 100 : 0;
+
+  const kpis = [
+    {
+      label: 'EMPRÉSTIMOS (ÚLTIMOS 30 DIAS)',
+      value: String(checkoutsLast30),
+      detail: `${loans.length} ativos agora • ${overdueLoans.length} em atraso`,
+      detailColor: overdueLoans.length > 0 ? 'var(--color-danger-text)' : 'var(--color-success-text)',
+    },
+    {
+      label: 'RECEITA DE MULTAS ARRECADADAS',
+      value: formatCurrency(revenue),
+      valueColor: 'var(--color-warning-text)',
+      detail: `${formatCurrency(receivable)} a receber (RF08)`,
+    },
+    {
+      label: 'ROTATIVIDADE DO ACERVO (30 DIAS)',
+      value: formatPercent(turnover),
+      detail: `Ocupação atual: ${formatPercent(occupancy)} dos exemplares circulantes`,
+      detailColor: 'var(--color-success-text)',
+    },
+    {
+      label: 'TOTAL DE EXEMPLARES NO ACERVO',
+      value: String(totalCopies),
+      detail: `${books.length} títulos catalogados`,
+    },
+  ];
+
+  // ---- Demanda reprimida: fila de espera real + histórico de empréstimos ----
+  const demandRows = books
+    .map((book) => {
+      const info = getBookAvailability(book);
+      const queue = reservations.filter((r) => r.bookId === book.id && r.status === 'Em espera').length;
+      let rec = 'Acervo suficiente';
+      let urgent = false;
+      if (queue > 0) {
+        rec = `Adquirir +${queue} ex.`;
+        urgent = true;
+      } else if (!info.isLocalOnly && info.available === 0) {
+        rec = 'Monitorar demanda';
+        urgent = true;
+      } else if (info.isLocalOnly) {
+        rec = 'Consulta local';
+      }
+      return { book, info, queue, rec, urgent };
+    })
+    .sort((a, b) => b.queue - a.queue || (b.book.totalLoans || 0) - (a.book.totalLoans || 0))
+    .slice(0, 5);
+
+  // ---- Balanço do inventário físico (todos os itens patrimoniais) ----
+  const totalItems = inventoryItems.length || 1;
+  const balance = BALANCE_ROWS.map((row) => {
+    const count = inventoryItems.filter((i) => i.status === row.status).length;
+    return { ...row, count, pct: (count / totalItems) * 100 };
+  });
+
+  // ---- Exportações ----
+  const handleExportReport = () => {
+    const ok = printDocument({
+      title: 'Relatório Gerencial da Biblioteca',
+      subtitle: `Visão estratégica do acervo e finanças • data-base ${today}`,
+      sections: [
+        { heading: 'Indicadores', kpis: kpis.map((k) => ({ label: k.label, value: k.value })) },
+        {
+          heading: 'Obras mais procuradas e fila de espera',
+          headers: ['Obra', 'Autor', 'Empréstimos (histórico)', 'Fila atual', 'Recomendação'],
+          rows: demandRows.map((r) => [r.book.title, r.book.author, r.book.totalLoans || 0, r.queue, r.rec]),
+        },
+        {
+          heading: 'Balanço do inventário físico',
+          headers: ['Situação', 'Quantidade', 'Percentual'],
+          rows: balance.map((b) => [b.status, b.count, formatPercent(b.pct)]),
+        },
+      ],
+    });
+    showToast(
+      ok
+        ? 'Relatório gerencial aberto para impressão — escolha "Salvar como PDF".'
+        : 'O navegador bloqueou a janela de impressão. Permita pop-ups para este site.',
+      ok ? 'success' : 'error'
+    );
+  };
+
+  const handleDelinquencyReport = () => {
+    const rows = pendingFines.map((f) => [
+      f.userName,
+      f.userMatricula,
+      f.bookTitle,
+      f.tombo,
+      f.accruing ? `Venceu em ${f.date}` : f.date,
+      f.daysOverdue,
+      f.amount.toFixed(2).replace('.', ','),
+      f.accruing ? 'Em apuração (devolução pendente)' : 'Multa pendente',
+    ]);
+    downloadCsv(
+      `relatorio-inadimplencia-${fileStamp()}.csv`,
+      ['Leitor', 'Matrícula', 'Obra', 'Tombo', 'Data', 'Dias de atraso', 'Valor (R$)', 'Situação'],
+      rows
+    );
+    showToast(`Relatório de inadimplência exportado (${rows.length} registro(s)).`);
+  };
+
+  const handleExportCsv = () => {
+    const rows = books.flatMap((b) =>
+      b.copies.map((c) => [
+        c.tombo,
+        b.title,
+        b.author,
+        b.category,
+        b.cdd,
+        c.location,
+        c.status,
+        c.holder || '',
+        c.dueDate || '',
+        b.totalLoans || 0,
+      ])
+    );
+    downloadCsv(
+      `acervo-circulacao-${fileStamp()}.csv`,
+      ['Tombo', 'Obra', 'Autor', 'Categoria', 'CDD', 'Localização', 'Situação', 'Leitor / Observação', 'Devolução / Retirada até', 'Empréstimos (histórico da obra)'],
+      rows
+    );
+    showToast(`Dados analíticos exportados em CSV (${rows.length} exemplares).`);
+  };
 
   return (
     <div className="panel-card">
@@ -44,21 +190,12 @@ const Relatorios = () => {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <select
-            className="select-field"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-          >
-            <option value="Outubro/2026">Período: Outubro/2026</option>
-            <option value="Setembro/2026">Período: Setembro/2026</option>
-            <option value="2026.2 (Semestre)">Período: 2026.2 (Semestre)</option>
-          </select>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="badge badge-neutral" style={{ padding: '9px 12px', fontSize: '12.5px' }}>
+            <CalendarDays size={14} /> Data-base: {today}
+          </span>
 
-          <button
-            className="btn btn-primary"
-            onClick={() => showToast(`Relatório Gerencial (${period}) exportado com sucesso!`)}
-          >
+          <button type="button" className="btn btn-primary" onClick={handleExportReport}>
             <Download size={15} /> Exportar Relatório
           </button>
         </div>
@@ -66,39 +203,23 @@ const Relatorios = () => {
 
       {/* 4 Cards Executivos (Frame 4.6 / relatorio gerencial.PNG) */}
       <div className="kpi-grid-4">
-        <div className="kpi-card" style={{ backgroundColor: '#FAF7F0' }}>
-          <div className="overline-label">TOTAL DE EMPRÉSTIMOS (MÊS)</div>
-          <div className="kpi-value">542</div>
-          <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--color-success-text)' }}>
-            +14% vs. mês anterior
+        {kpis.map((kpi) => (
+          <div key={kpi.label} className="kpi-card" style={{ backgroundColor: '#FAF7F0' }}>
+            <div className="overline-label">{kpi.label}</div>
+            <div className="kpi-value" style={kpi.valueColor ? { color: kpi.valueColor } : undefined}>
+              {kpi.value}
+            </div>
+            <div
+              style={{
+                fontSize: '12.5px',
+                fontWeight: kpi.detailColor ? 700 : 400,
+                color: kpi.detailColor || 'var(--color-text-secondary)',
+              }}
+            >
+              {kpi.detail}
+            </div>
           </div>
-        </div>
-
-        <div className="kpi-card" style={{ backgroundColor: '#FAF7F0' }}>
-          <div className="overline-label">RECEITA DE MULTAS ARRECADADAS</div>
-          <div className="kpi-value" style={{ color: 'var(--color-warning-text)' }}>
-            R$ 486,00
-          </div>
-          <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-            Infrações quitadas no balcão (RF08)
-          </div>
-        </div>
-
-        <div className="kpi-card" style={{ backgroundColor: '#FAF7F0' }}>
-          <div className="overline-label">ROTATIVIDADE DO ACERVO</div>
-          <div className="kpi-value">72.4%</div>
-          <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--color-success-text)' }}>
-            Alta utilização acadêmica
-          </div>
-        </div>
-
-        <div className="kpi-card" style={{ backgroundColor: '#FAF7F0' }}>
-          <div className="overline-label">TOTAL DE EXEMPLARES NO ACERVO</div>
-          <div className="kpi-value">3.840</div>
-          <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-            1.248 títulos catalogados
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* Duas Colunas: Obras Mais Procuradas + Balanço do Inventário Físico */}
@@ -122,28 +243,22 @@ const Relatorios = () => {
                 </tr>
               </thead>
               <tbody>
-                {TOP_DEMAND_BOOKS.map((item) => (
-                  <tr key={item.title}>
+                {demandRows.map(({ book, queue, rec, urgent }) => (
+                  <tr key={book.id}>
                     <td>
-                      <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)' }}>
-                        {item.title}
-                      </div>
-                      <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                        {item.author}
-                      </div>
+                      <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)' }}>{book.title}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{book.author}</div>
                     </td>
-                    <td>{item.loans}</td>
-                    <td>{item.queue}</td>
+                    <td>{book.totalLoans || 0} vezes</td>
+                    <td>{queue === 0 ? 'Sem fila' : `${queue} leitor(es)`}</td>
                     <td>
                       <strong
                         style={{
                           fontSize: '13px',
-                          color: item.urgent
-                            ? 'var(--color-warning-text)'
-                            : 'var(--color-success-text)',
+                          color: urgent ? 'var(--color-warning-text)' : 'var(--color-success-text)',
                         }}
                       >
-                        {item.rec}
+                        {rec}
                       </strong>
                     </td>
                   </tr>
@@ -165,11 +280,11 @@ const Relatorios = () => {
               padding: '18px 20px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '16px',
+              gap: '14px',
             }}
           >
-            {INVENTORY_BALANCE.map((row) => (
-              <div key={row.label}>
+            {balance.map((row) => (
+              <div key={row.status}>
                 <div
                   style={{
                     display: 'flex',
@@ -177,10 +292,13 @@ const Relatorios = () => {
                     fontSize: '13px',
                     fontWeight: 700,
                     marginBottom: '6px',
+                    gap: '8px',
                   }}
                 >
                   <span>{row.label}</span>
-                  <span style={{ color: row.color }}>{row.value}</span>
+                  <span style={{ color: row.color, whiteSpace: 'nowrap' }}>
+                    {row.count} ex. ({formatPercent(row.pct, 0)})
+                  </span>
                 </div>
                 <div
                   style={{
@@ -201,6 +319,9 @@ const Relatorios = () => {
                 </div>
               </div>
             ))}
+            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+              Total: {inventoryItems.length} itens patrimoniais (livros, TCCs e periódicos).
+            </div>
           </div>
         </div>
       </div>
@@ -223,31 +344,23 @@ const Relatorios = () => {
 
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button
-              className="btn btn-outline"
-              onClick={() => showToast('Relatório de Inadimplência gerado com sucesso!')}
-            >
+            <button type="button" className="btn btn-outline" onClick={handleDelinquencyReport}>
               Relatório de Inadimplência
             </button>
-            <button
-              className="btn btn-outline"
-              onClick={() => showToast('Dados analíticos exportados em formato CSV!')}
-            >
+            <button type="button" className="btn btn-outline" onClick={handleExportCsv}>
               <FileSpreadsheet size={15} /> Exportar Dados para CSV
             </button>
-            <button
-              className="btn btn-teal"
-              onClick={() => setActiveTab('Inventário')}
-            >
+            <button type="button" className="btn btn-teal" onClick={() => setActiveTab('Inventário')}>
               <ClipboardCheck size={15} /> Iniciar Auditoria de Acervo
             </button>
           </div>
 
           <button
+            type="button"
             className="btn btn-primary"
-            onClick={() => setActiveTab('Catálogo')}
+            onClick={() => setActiveTab('Catálogo', { type: 'new-book' })}
           >
-            <Plus size={15} /> + Entrada de Novo Lote
+            <Plus size={15} /> Entrada de Novo Lote
           </button>
         </div>
       </div>

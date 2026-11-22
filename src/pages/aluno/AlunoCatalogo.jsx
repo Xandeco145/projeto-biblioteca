@@ -1,10 +1,31 @@
 import React, { useState } from 'react';
-import { Search, ChevronRight, Users, MapPin } from 'lucide-react';
+import { Search, ChevronRight, Users, AlertTriangle } from 'lucide-react';
 import { useLibrary } from '../../context/LibraryContext';
 import { BUSINESS_RULES } from '../../data/mockData';
+import { addDaysToBrDate, shortBrDate } from '../../utils/format';
+import { getBookAvailability, reservationHoldDays } from '../../utils/library';
+
+const coverStyle = (color, large) => ({
+  width: large ? '48px' : '34px',
+  height: large ? '66px' : '46px',
+  backgroundColor: color,
+  color: '#FAF7F0',
+  borderRadius: large ? '4px' : '3px',
+  padding: large ? '6px' : '4px',
+  fontSize: large ? '8px' : '7px',
+  fontFamily: 'var(--font-mono)',
+  fontWeight: 700,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  textAlign: 'center',
+  flexShrink: 0,
+  borderLeft: '3px solid #D68C45',
+});
 
 const AlunoCatalogo = () => {
-  const { currentUser, books, categories, reservations, createReservation } = useLibrary();
+  const { currentUser, books, categories, reservations, loans, createReservation, today } =
+    useLibrary();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todas');
@@ -14,39 +35,73 @@ const AlunoCatalogo = () => {
   const [queueModalBook, setQueueModalBook] = useState(null);
   const [feedbackError, setFeedbackError] = useState('');
 
+  const totalCopies = books.reduce((acc, b) => acc + b.copies.length, 0);
+  const myActiveLoans = loans.filter((l) => l.userId === currentUser.id).length;
+  const atLoanLimit = myActiveLoans >= BUSINESS_RULES.MAX_ACTIVE_LOANS;
+  const isBlocked = currentUser.status === 'Suspenso';
+  const pickupDeadline = addDaysToBrDate(today, reservationHoldDays());
+
   const filteredBooks = books.filter((book) => {
     const query = searchTerm.toLowerCase().trim();
     const matchesSearch =
       !query ||
       book.title.toLowerCase().includes(query) ||
       book.author.toLowerCase().includes(query) ||
-      book.isbn.toLowerCase().includes(query);
+      book.isbn.toLowerCase().includes(query) ||
+      book.category.toLowerCase().includes(query);
 
-    const matchesCategory =
-      selectedCategory === 'Todas' || book.category === selectedCategory;
-
-    const availableCopies = book.copies.filter((c) => c.status === 'Disponível').length;
-    const isLocalOnly = book.circulationType === 'Consulta Local';
-
-    let bookStatus = 'Emprestado';
-    if (isLocalOnly) bookStatus = 'Consulta local';
-    else if (availableCopies > 0) bookStatus = 'Disponível';
-
-    const matchesStatus = selectedStatus === 'Todos' || bookStatus === selectedStatus;
+    const matchesCategory = selectedCategory === 'Todas' || book.category === selectedCategory;
+    const matchesStatus =
+      selectedStatus === 'Todos' || getBookAvailability(book).statusLabel === selectedStatus;
 
     return matchesSearch && matchesCategory && matchesStatus;
   });
+
+  const openModal = (setter, book) => {
+    setFeedbackError('');
+    setter(book);
+  };
+
+  const closeModals = () => {
+    setReserveModalBook(null);
+    setQueueModalBook(null);
+    setFeedbackError('');
+  };
 
   const handleConfirmReserve = (book) => {
     const res = createReservation({ bookId: book.id, userId: currentUser.id });
     if (!res.ok) {
       setFeedbackError(res.error);
     } else {
-      setFeedbackError('');
-      setReserveModalBook(null);
-      setQueueModalBook(null);
+      closeModals();
     }
   };
+
+  // Avisos de regra (a reserva é permitida, mas a retirada depende de RF04/RF05)
+  const pickupWarnings = (
+    <>
+      {isBlocked && (
+        <div className="form-warning" style={{ marginBottom: '12px' }}>
+          <strong>Atenção (RF05):</strong> seu cadastro possui pendências ({currentUser.blockReason}).
+          A retirada só será liberada após a regularização no balcão.
+        </div>
+      )}
+      {!isBlocked && atLoanLimit && (
+        <div className="form-warning" style={{ marginBottom: '12px' }}>
+          <strong>Atenção (RF04):</strong> você já possui {myActiveLoans} de{' '}
+          {BUSINESS_RULES.MAX_ACTIVE_LOANS} empréstimos ativos. Para retirar esta obra será
+          necessário devolver um exemplar antes.
+        </div>
+      )}
+    </>
+  );
+
+  const errorBox = feedbackError && (
+    <div role="alert" className="form-error" style={{ marginBottom: '12px' }}>
+      <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
+      <span>{feedbackError}</span>
+    </div>
+  );
 
   return (
     <div className="panel-card">
@@ -72,9 +127,9 @@ const AlunoCatalogo = () => {
 
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--color-deep-teal)' }}>
-            1.248
+            {books.length}
           </div>
-          <div className="overline-label">OBRAS NO ACERVO</div>
+          <div className="overline-label">OBRAS • {totalCopies} EXEMPLARES</div>
         </div>
       </div>
 
@@ -97,7 +152,8 @@ const AlunoCatalogo = () => {
             type="text"
             className="input-field"
             style={{ width: '100%', paddingLeft: '36px' }}
-            placeholder="Buscar por título, autor ou ISBN..."
+            placeholder="Buscar por título, autor, categoria ou ISBN..."
+            aria-label="Buscar obras"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -105,6 +161,7 @@ const AlunoCatalogo = () => {
 
         <select
           className="select-field"
+          aria-label="Filtrar por categoria"
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
         >
@@ -118,6 +175,7 @@ const AlunoCatalogo = () => {
 
         <select
           className="select-field"
+          aria-label="Filtrar por disponibilidade"
           value={selectedStatus}
           onChange={(e) => setSelectedStatus(e.target.value)}
         >
@@ -125,6 +183,7 @@ const AlunoCatalogo = () => {
           <option value="Disponível">Disponível</option>
           <option value="Emprestado">Emprestado</option>
           <option value="Consulta local">Consulta local</option>
+          <option value="Indisponível">Indisponível</option>
         </select>
       </div>
 
@@ -144,40 +203,23 @@ const AlunoCatalogo = () => {
             </tr>
           </thead>
           <tbody>
+            {filteredBooks.length === 0 && (
+              <tr className="empty-row">
+                <td colSpan="5">Nenhuma obra encontrada para os filtros informados.</td>
+              </tr>
+            )}
             {filteredBooks.map((book) => {
-              const availableCopies = book.copies.filter((c) => c.status === 'Disponível');
-              const totalCopies = book.copies.length;
-              const isLocalOnly = book.circulationType === 'Consulta Local';
-              const alreadyReserved = reservations.some(
+              const info = getBookAvailability(book);
+              const myReservation = reservations.find(
                 (r) => r.bookId === book.id && r.userId === currentUser.id
               );
+              const hasLoan = loans.some((l) => l.bookId === book.id && l.userId === currentUser.id);
 
               return (
                 <tr key={book.id}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      {/* Miniatura da Capa */}
-                      <div
-                        style={{
-                          width: '34px',
-                          height: '46px',
-                          backgroundColor: book.coverColor,
-                          color: '#FAF7F0',
-                          borderRadius: '3px',
-                          padding: '4px',
-                          fontSize: '7px',
-                          fontFamily: 'var(--font-mono)',
-                          fontWeight: 700,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          textAlign: 'center',
-                          flexShrink: 0,
-                          borderLeft: '3px solid #D68C45',
-                        }}
-                      >
-                        {book.coverShort}
-                      </div>
+                      <div style={coverStyle(book.coverColor)}>{book.coverShort}</div>
                       <div>
                         <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)' }}>
                           {book.title}
@@ -198,9 +240,11 @@ const AlunoCatalogo = () => {
 
                   <td>
                     <div style={{ fontWeight: 600 }}>{book.location}</div>
-                    {availableCopies.length === 0 && !isLocalOnly ? (
+                    {info.available === 0 && !info.isLocalOnly ? (
                       <div style={{ fontSize: '12px', color: 'var(--color-danger-text)', fontWeight: 600 }}>
-                        Devolução prev.: {book.nextReturnDate || '22/10/2026'}
+                        {info.nextReturnDate
+                          ? `Devolução prev.: ${info.nextReturnDate}`
+                          : 'Sem previsão de devolução'}
                       </div>
                     ) : (
                       <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
@@ -210,64 +254,70 @@ const AlunoCatalogo = () => {
                   </td>
 
                   <td>
-                    {isLocalOnly ? (
+                    {info.isLocalOnly ? (
                       <>
                         <div style={{ fontWeight: 700, color: 'var(--color-info-text)', fontSize: '13px' }}>
                           • Consulta local
                         </div>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                          {totalCopies} exemplares
+                          {info.total} exemplares
                         </div>
                       </>
-                    ) : availableCopies.length > 0 ? (
+                    ) : info.available > 0 ? (
                       <>
                         <div style={{ fontWeight: 700, color: 'var(--color-success-text)', fontSize: '13px' }}>
                           • Disponível
                         </div>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                          {availableCopies.length} de {totalCopies} exemplares
+                          {info.available} de {info.total} exemplares
                         </div>
                       </>
                     ) : (
                       <>
                         <div style={{ fontWeight: 700, color: 'var(--color-danger-text)', fontSize: '13px' }}>
-                          • Emprestado
+                          • {info.statusLabel}
                         </div>
                         <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                          0 de {totalCopies} exemplares
+                          0 de {info.total} exemplares
                         </div>
                       </>
                     )}
                   </td>
 
                   <td style={{ textAlign: 'right' }}>
-                    {isLocalOnly ? (
-                      <button className="btn btn-outline" disabled style={{ fontSize: '12.5px' }}>
+                    {info.isLocalOnly ? (
+                      <button type="button" className="btn btn-outline" disabled style={{ fontSize: '12.5px' }}>
                         Uso no Recinto
                       </button>
-                    ) : alreadyReserved ? (
-                      <span className="badge badge-info">Solicitado</span>
-                    ) : availableCopies.length > 0 ? (
+                    ) : hasLoan ? (
+                      <span className="badge badge-neutral">Em sua posse</span>
+                    ) : myReservation ? (
+                      <span className="badge badge-info">
+                        {myReservation.status === 'Em espera'
+                          ? `Na fila (${myReservation.queuePosition}º)`
+                          : 'Reservado para você'}
+                      </span>
+                    ) : info.available > 0 ? (
                       <button
+                        type="button"
                         className="btn btn-primary"
                         style={{ minWidth: '126px', padding: '8px 14px' }}
-                        onClick={() => {
-                          setFeedbackError('');
-                          setReserveModalBook(book);
-                        }}
+                        onClick={() => openModal(setReserveModalBook, book)}
                       >
                         Reservar <ChevronRight size={15} />
                       </button>
-                    ) : (
+                    ) : info.canQueue ? (
                       <button
+                        type="button"
                         className="btn btn-teal"
                         style={{ minWidth: '126px', padding: '8px 14px' }}
-                        onClick={() => {
-                          setFeedbackError('');
-                          setQueueModalBook(book);
-                        }}
+                        onClick={() => openModal(setQueueModalBook, book)}
                       >
                         Entrar na Fila <ChevronRight size={15} />
+                      </button>
+                    ) : (
+                      <button type="button" className="btn btn-outline" disabled style={{ fontSize: '12.5px' }}>
+                        Indisponível
                       </button>
                     )}
                   </td>
@@ -280,8 +330,8 @@ const AlunoCatalogo = () => {
 
       {/* Modal 1: Confirmar Reserva de Exemplar Disponível (Frame 4.4.1 com prazo 14 dias RF3) */}
       {reserveModalBook && (
-        <div className="modal-backdrop" onClick={() => setReserveModalBook(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={closeModals}>
+          <div className="modal-box" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h2 className="serif-title" style={{ fontSize: '26px', marginBottom: '4px' }}>
               Confirmar Reserva de Exemplar
             </h2>
@@ -300,26 +350,7 @@ const AlunoCatalogo = () => {
                 marginBottom: '16px',
               }}
             >
-              <div
-                style={{
-                  width: '48px',
-                  height: '66px',
-                  backgroundColor: reserveModalBook.coverColor,
-                  color: '#FAF7F0',
-                  borderRadius: '4px',
-                  padding: '6px',
-                  fontSize: '8px',
-                  fontFamily: 'var(--font-mono)',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  textAlign: 'center',
-                  borderLeft: '3px solid #D68C45',
-                }}
-              >
-                {reserveModalBook.coverShort}
-              </div>
+              <div style={coverStyle(reserveModalBook.coverColor, true)}>{reserveModalBook.coverShort}</div>
               <div>
                 <div style={{ fontWeight: 700, fontSize: '16px', color: 'var(--color-deep-teal)' }}>
                   {reserveModalBook.title}
@@ -342,7 +373,7 @@ const AlunoCatalogo = () => {
                 backgroundColor: '#F4F0E8',
                 borderRadius: '8px',
                 padding: '16px 18px',
-                marginBottom: '20px',
+                marginBottom: '16px',
                 fontSize: '13.5px',
                 lineHeight: 1.7,
               }}
@@ -356,7 +387,8 @@ const AlunoCatalogo = () => {
               <div>
                 • Prazo para Retirada:{' '}
                 <strong style={{ color: 'var(--color-warning-text)' }}>
-                  Até {BUSINESS_RULES.RESERVATION_HOLD_HOURS} horas após a reserva (21/10 às 18h)
+                  Até {BUSINESS_RULES.RESERVATION_HOLD_HOURS} horas após a reserva ({shortBrDate(pickupDeadline)} às{' '}
+                  {BUSINESS_RULES.PICKUP_CLOSING_HOUR}h)
                 </strong>
               </div>
               <div>
@@ -367,21 +399,19 @@ const AlunoCatalogo = () => {
                 • Notificação: <strong>Enviada para {currentUser.email}</strong>
               </div>
               <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '6px' }}>
-                Nota: Caso não retire no prazo, a reserva expira e a obra retorna ao acervo geral.
+                Nota: caso não retire no prazo, a reserva expira e a obra retorna ao acervo geral.
               </div>
             </div>
 
-            {feedbackError && (
-              <div style={{ color: 'var(--color-danger-text)', fontSize: '13px', marginBottom: '12px' }}>
-                {feedbackError}
-              </div>
-            )}
+            {pickupWarnings}
+            {errorBox}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button className="btn btn-outline" onClick={() => setReserveModalBook(null)}>
+              <button type="button" className="btn btn-outline" onClick={closeModals}>
                 Cancelar
               </button>
               <button
+                type="button"
                 className="btn btn-primary"
                 onClick={() => handleConfirmReserve(reserveModalBook)}
               >
@@ -393,125 +423,127 @@ const AlunoCatalogo = () => {
       )}
 
       {/* Modal 2: Entrar na Fila de Espera (Frame 4.4.1 / fila.PNG) */}
-      {queueModalBook && (
-        <div className="modal-backdrop" onClick={() => setQueueModalBook(null)}>
-          <div className="modal-box teal-top" onClick={(e) => e.stopPropagation()}>
-            <h2 className="serif-title" style={{ fontSize: '26px', marginBottom: '4px' }}>
-              Entrar na Fila de Espera
-            </h2>
-            <p style={{ margin: '0 0 18px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-              Todos os exemplares desta obra encontram-se atualmente emprestados.
-            </p>
-
-            <div
-              style={{
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                padding: '16px',
-                display: 'flex',
-                gap: '14px',
-                alignItems: 'center',
-                marginBottom: '16px',
-              }}
-            >
+      {queueModalBook &&
+        (() => {
+          const info = getBookAvailability(queueModalBook);
+          const position =
+            reservations.filter((r) => r.bookId === queueModalBook.id && r.status === 'Em espera')
+              .length + 1;
+          return (
+            <div className="modal-backdrop" onClick={closeModals}>
               <div
-                style={{
-                  width: '48px',
-                  height: '66px',
-                  backgroundColor: queueModalBook.coverColor,
-                  color: '#FAF7F0',
-                  borderRadius: '4px',
-                  padding: '6px',
-                  fontSize: '8px',
-                  fontFamily: 'var(--font-mono)',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  textAlign: 'center',
-                  borderLeft: '3px solid #D68C45',
-                }}
+                className="modal-box teal-top"
+                role="dialog"
+                aria-modal="true"
+                onClick={(e) => e.stopPropagation()}
               >
-                {queueModalBook.coverShort}
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '16px', color: 'var(--color-deep-teal)' }}>
-                  {queueModalBook.title}
+                <h2 className="serif-title" style={{ fontSize: '26px', marginBottom: '4px' }}>
+                  Entrar na Fila de Espera
+                </h2>
+                <p style={{ margin: '0 0 18px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                  Nenhum exemplar desta obra está disponível no momento.
+                </p>
+
+                <div
+                  style={{
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    display: 'flex',
+                    gap: '14px',
+                    alignItems: 'center',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <div style={coverStyle(queueModalBook.coverColor, true)}>{queueModalBook.coverShort}</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '16px', color: 'var(--color-deep-teal)' }}>
+                      {queueModalBook.title}
+                    </div>
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                      {queueModalBook.author} • {queueModalBook.publisher} • {queueModalBook.year}
+                    </div>
+                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '3px' }}>
+                      Total de exemplares: {info.total} (0 disponíveis no momento)
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-danger-text)', marginTop: '3px' }}>
+                      • {info.loaned} emprestado(s)
+                      {info.repair > 0 ? ` • ${info.repair} em restauração` : ''}
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                  {queueModalBook.author} • {queueModalBook.publisher} • {queueModalBook.year}
+
+                <div
+                  style={{
+                    backgroundColor: '#F4F0E8',
+                    borderRadius: '8px',
+                    padding: '16px 18px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <div
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      border: '1px solid #185266',
+                      borderRadius: '6px',
+                      padding: '12px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '14px',
+                    }}
+                  >
+                    <span style={{ fontWeight: 700, color: 'var(--color-deep-teal)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Users size={16} /> Sua posição na fila de espera:
+                    </span>
+                    <strong style={{ color: 'var(--color-warning-text)', fontSize: '16px' }}>
+                      {position}º Lugar
+                    </strong>
+                  </div>
+
+                  <div style={{ fontSize: '13.5px', lineHeight: 1.7 }}>
+                    <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)', marginBottom: '4px' }}>
+                      Condições e Notificação da Fila:
+                    </div>
+                    <div>
+                      • Próxima Devolução Estimada:{' '}
+                      <strong>
+                        {info.nextReturnDate
+                          ? `${info.nextReturnDate} às ${BUSINESS_RULES.PICKUP_CLOSING_HOUR}:00`
+                          : 'sem previsão (exemplares em restauração)'}
+                      </strong>
+                    </div>
+                    <div>
+                      • Aviso de Liberação: <strong>Disparo automático via e-mail ({currentUser.email}) e portal</strong>
+                    </div>
+                    <div>
+                      • Tempo de Garantia:{' '}
+                      <strong style={{ color: 'var(--color-success-text)' }}>
+                        {BUSINESS_RULES.RESERVATION_HOLD_HOURS} horas de reserva no balcão após a liberação
+                      </strong>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '3px' }}>
-                  Total de exemplares: {queueModalBook.copies.length} (0 disponíveis no momento)
-                </div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-danger-text)', marginTop: '3px' }}>
-                  • Emprestados até {queueModalBook.nextReturnDate || '22/10/2026'}
+
+                {pickupWarnings}
+                {errorBox}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                  <button type="button" className="btn btn-outline" onClick={closeModals}>
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-teal"
+                    onClick={() => handleConfirmReserve(queueModalBook)}
+                  >
+                    Entrar na Fila
+                  </button>
                 </div>
               </div>
             </div>
-
-            <div
-              style={{
-                backgroundColor: '#F4F0E8',
-                borderRadius: '8px',
-                padding: '16px 18px',
-                marginBottom: '20px',
-              }}
-            >
-              <div
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  border: '1px solid #185266',
-                  borderRadius: '6px',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '14px',
-                }}
-              >
-                <span style={{ fontWeight: 700, color: 'var(--color-deep-teal)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Users size={16} /> Sua posição na fila de espera:
-                </span>
-                <strong style={{ color: 'var(--color-warning-text)', fontSize: '16px' }}>
-                  {reservations.filter((r) => r.bookId === queueModalBook.id && r.status === 'Em espera').length + 1}º Lugar
-                </strong>
-              </div>
-
-              <div style={{ fontSize: '13.5px', lineHeight: 1.7 }}>
-                <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)', marginBottom: '4px' }}>
-                  Condições e Notificação da Fila:
-                </div>
-                <div>
-                  • Próxima Devolução Estimada:{' '}
-                  <strong>{queueModalBook.nextReturnDate || '22/10/2026'} às 18:00</strong>
-                </div>
-                <div>
-                  • Aviso de Liberação: <strong>Disparo automático via e-mail ({currentUser.email}) e portal</strong>
-                </div>
-                <div>
-                  • Tempo de Garantia:{' '}
-                  <strong style={{ color: 'var(--color-success-text)' }}>
-                    24 horas reservado no balcão
-                  </strong>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button className="btn btn-outline" onClick={() => setQueueModalBook(null)}>
-                Cancelar
-              </button>
-              <button
-                className="btn btn-teal"
-                onClick={() => handleConfirmReserve(queueModalBook)}
-              >
-                Entrar na Fila
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
     </div>
   );
 };

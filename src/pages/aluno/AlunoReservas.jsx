@@ -1,13 +1,34 @@
 import React from 'react';
 import { Bookmark, Clock, MapPin, PlusCircle, XCircle } from 'lucide-react';
 import { useLibrary } from '../../context/LibraryContext';
+import { BUSINESS_RULES } from '../../data/mockData';
+import { getBookAvailability } from '../../utils/library';
 
 const AlunoReservas = () => {
-  const { currentUser, reservations, cancelReservation, setActiveTab } = useLibrary();
+  const { currentUser, reservations, books, cancelReservation, setActiveTab } = useLibrary();
 
   const myReservations = reservations.filter((r) => r.userId === currentUser.id);
   const readyCount = myReservations.filter((r) => r.status === 'Pronta para retirada').length;
   const waitingCount = myReservations.filter((r) => r.status === 'Em espera').length;
+
+  const pickupText = (res) => {
+    if (res.status === 'Pronta para retirada') {
+      return res.pickupExpired
+        ? `Prazo de retirada expirado em ${res.pickupDeadline}`
+        : `Retirar até ${res.pickupDeadline} às ${BUSINESS_RULES.PICKUP_CLOSING_HOUR}h`;
+    }
+    const book = books.find((b) => b.id === res.bookId);
+    const next = book ? getBookAvailability(book).nextReturnDate : null;
+    return next ? `Aguardando devolução (prev. ${next})` : 'Aguardando devolução';
+  };
+
+  const handleCancel = (res) => {
+    const question =
+      res.status === 'Pronta para retirada'
+        ? `Cancelar a reserva ${res.id} de "${res.bookTitle}"? O exemplar separado será liberado.`
+        : `Sair da fila de espera de "${res.bookTitle}"?`;
+    if (window.confirm(question)) cancelReservation(res.id);
+  };
 
   return (
     <div className="panel-card">
@@ -30,7 +51,7 @@ const AlunoReservas = () => {
           </p>
         </div>
 
-        <button className="btn btn-primary" onClick={() => setActiveTab('Catálogo')}>
+        <button type="button" className="btn btn-primary" onClick={() => setActiveTab('Catálogo')}>
           <PlusCircle size={16} /> Nova Reserva no Catálogo
         </button>
       </div>
@@ -51,7 +72,7 @@ const AlunoReservas = () => {
             {readyCount}
           </div>
           <div style={{ fontSize: '13px', color: 'var(--color-success-text)', fontWeight: 600 }}>
-            Prazo máximo de 48h no balcão térreo
+            Prazo máximo de {BUSINESS_RULES.RESERVATION_HOLD_HOURS}h no balcão térreo
           </div>
         </div>
 
@@ -61,7 +82,7 @@ const AlunoReservas = () => {
             {waitingCount}
           </div>
           <div style={{ fontSize: '13px', color: 'var(--color-warning-text)', fontWeight: 600 }}>
-            Notificação automática assim que devolvido
+            Notificação automática assim que um exemplar for devolvido
           </div>
         </div>
       </div>
@@ -83,7 +104,7 @@ const AlunoReservas = () => {
           <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '16px' }}>
             Consulte o catálogo da Biblioteca Central para reservar exemplares disponíveis ou entrar na fila de espera.
           </p>
-          <button className="btn btn-teal" onClick={() => setActiveTab('Catálogo')}>
+          <button type="button" className="btn btn-teal" onClick={() => setActiveTab('Catálogo')}>
             Ir para o Catálogo
           </button>
         </div>
@@ -108,7 +129,11 @@ const AlunoReservas = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
                   <span className="mono-code badge badge-neutral">{res.id}</span>
                   {res.status === 'Pronta para retirada' ? (
-                    <span className="badge badge-success">• Pronta para retirada</span>
+                    res.pickupExpired ? (
+                      <span className="badge badge-danger">• Prazo de retirada expirado</span>
+                    ) : (
+                      <span className="badge badge-success">• Pronta para retirada</span>
+                    )
                   ) : (
                     <span className="badge badge-warning">
                       • {res.queuePosition}º lugar na fila de espera
@@ -135,7 +160,7 @@ const AlunoReservas = () => {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                   <Clock size={14} color="#185266" />
-                  <span>{res.pickupDeadline}</span>
+                  <span>{pickupText(res)}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-text-secondary)' }}>
                   <MapPin size={14} color="#185266" />
@@ -147,10 +172,7 @@ const AlunoReservas = () => {
                 </div>
               </div>
 
-              <button
-                className="btn btn-danger-outline"
-                onClick={() => cancelReservation(res.id)}
-              >
+              <button type="button" className="btn btn-danger-outline" onClick={() => handleCancel(res)}>
                 <XCircle size={15} /> Cancelar Solicitação
               </button>
             </div>

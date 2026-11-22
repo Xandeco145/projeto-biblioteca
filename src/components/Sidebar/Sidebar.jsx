@@ -14,15 +14,14 @@ import {
 import { useLibrary } from '../../context/LibraryContext';
 
 const Sidebar = () => {
-  const { currentUser, activeTab, setActiveTab, setSelectedBookId, fines, notifications } =
-    useLibrary();
+  const { currentUser, activeTab, setActiveTab, fines, getVisibleNotifications } = useLibrary();
 
   const role = currentUser?.role || 'aluno';
 
-  const unreadCount = notifications.filter(
-    (n) => !n.read && (role === 'aluno' ? n.targetRole === 'aluno' : n.targetRole === 'staff')
-  ).length;
+  // Apenas as notificações do próprio leitor (antes contava as de todos os alunos)
+  const unreadCount = getVisibleNotifications(currentUser).filter((n) => !n.read).length;
 
+  // Inclui multas em apuração (empréstimos em atraso ainda não devolvidos)
   const pendingStudentFines = fines.filter(
     (f) => f.userId === currentUser?.id && f.status === 'Pendente'
   ).length;
@@ -62,7 +61,6 @@ const Sidebar = () => {
 
   const handleSelect = (id) => {
     setActiveTab(id);
-    setSelectedBookId(null);
   };
 
   return (
@@ -82,7 +80,9 @@ const Sidebar = () => {
           return (
             <button
               key={item.id}
+              type="button"
               className={`nav-item ${isActive ? 'active' : ''}`}
+              aria-current={isActive ? 'page' : undefined}
               onClick={() => handleSelect(item.id)}
             >
               <Icon className="icon" size={20} strokeWidth={isActive ? 2.5 : 2} />
