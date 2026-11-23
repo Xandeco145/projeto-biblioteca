@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import { useLibrary } from './context/LibraryContext';
 import Sidebar from './components/Sidebar/Sidebar';
 import Header from './components/Header/Header';
@@ -74,9 +74,18 @@ function App() {
       </div>
 
       {toast && (
-        <div className="toast-banner" role="status">
-          <CheckCircle2 size={20} color="#D68C45" />
-          <span>{toast}</span>
+        <div
+          className={`toast-banner ${toast.type === 'error' ? 'toast-error' : ''}`}
+          role={toast.type === 'error' ? 'alert' : 'status'}
+        >
+          {toast.type === 'error' ? (
+            <AlertTriangle size={20} color="#F2B8B8" style={{ flexShrink: 0 }} />
+          ) : toast.type === 'info' ? (
+            <Info size={20} color="#D68C45" style={{ flexShrink: 0 }} />
+          ) : (
+            <CheckCircle2 size={20} color="#D68C45" style={{ flexShrink: 0 }} />
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
     </div>

@@ -1,11 +1,38 @@
+import { dateFromToday } from '../utils/format';
+
 // Regras de Negócio Oficializadas (Alinhadas à AP2 e Feedback da Prof.ª Caroline)
 export const BUSINESS_RULES = {
-  LOAN_DAYS: 14,          // RF3: Prazo máximo de devolução de 14 dias
-  MAX_ACTIVE_LOANS: 2,    // RF4: Máximo de 2 livros simultâneos por aluno
-  MAX_RENEWALS: 5,        // RF9: Até 5 renovações consecutivas (sem reserva ativa)
-  FINE_BASE: 5.0,         // RF8: Taxa fixa de R$ 5,00
-  FINE_PER_DAY: 2.0,      // RF8: Acrescida de R$ 2,00 por dia de atraso
-  RESERVATION_HOLD_HOURS: 48,
+  LOAN_DAYS: 14, // RF03: Prazo de devolução de 14 dias corridos (empréstimo e renovação)
+  MAX_ACTIVE_LOANS: 2, // RF04: Máximo de 2 livros simultâneos por leitor
+  MAX_RENEWALS: 5, // RF09: Até 5 renovações consecutivas (sem fila de espera na obra)
+  FINE_BASE: 5.0, // RF08: Taxa fixa de R$ 5,00
+  FINE_PER_DAY: 2.0, // RF08: Acrescida de R$ 2,00 por dia de atraso
+  RESERVATION_HOLD_HOURS: 48, // RF10: Prazo para retirada da reserva no balcão
+  PICKUP_CLOSING_HOUR: 18, // Horário limite de retirada no balcão (18h)
+};
+
+const fineFor = (days) => BUSINESS_RULES.FINE_BASE + days * BUSINESS_RULES.FINE_PER_DAY;
+
+// ---------------------------------------------------------------------------
+// Datas da simulação: todas relativas à data atual do computador, para que os
+// prazos, atrasos e multas do protótipo estejam sempre coerentes.
+// ---------------------------------------------------------------------------
+const D = dateFromToday;
+
+const LOAN_DATES = {
+  marianaPedagogia: { checkout: D(-11), due: D(3) }, // vence em 3 dias
+  marianaMetodologia: { checkout: D(-21), due: D(7) }, // 14 dias + 1 renovação de 14 dias
+  rafaelCapital: { checkout: D(-17), due: D(-3) }, // 3 dias de atraso → multa de R$ 11,00
+  beatrizKuhn: { checkout: D(-11), due: D(3) },
+  lucasKuhn: { checkout: D(-6), due: D(8) },
+  camilaKuhn: { checkout: D(-4), due: D(10) },
+  beatrizCapital: { checkout: D(-2), due: D(12) },
+};
+
+const RESERVATION_DATES = {
+  lucasDomCasmurro: { request: D(-1), deadline: D(1) }, // 48h para retirada
+  marianaKuhn: { request: D(-3) },
+  camilaCapital: { request: D(-1) },
 };
 
 export const INITIAL_CATEGORIES = [
@@ -19,6 +46,8 @@ export const INITIAL_CATEGORIES = [
   { id: 'cat-8', name: 'Ciências Exatas', cdd: '515', description: 'Cálculo, Álgebra e Física' },
 ];
 
+// A situação (Ativo/Suspenso) NÃO é fixa: é calculada automaticamente pelo sistema
+// a partir de multas pendentes e devoluções em atraso (RF05).
 export const INITIAL_USERS = [
   {
     id: 'u-1',
@@ -28,9 +57,10 @@ export const INITIAL_USERS = [
     email: 'mariana.costa@rede.ulbra.br',
     role: 'aluno', // 'aluno' | 'bibliotecario' | 'admin'
     roleLabel: 'Estudante',
+    readerType: 'Estudante',
     department: 'Análise e Desenvolvimento de Sistemas • Graduação',
-    status: 'Ativo',
     avatarInitials: 'MC',
+    registeredAt: D(-420),
   },
   {
     id: 'u-2',
@@ -40,9 +70,10 @@ export const INITIAL_USERS = [
     email: 'lucas.almeida@rede.ulbra.br',
     role: 'aluno',
     roleLabel: 'Estudante',
+    readerType: 'Estudante',
     department: 'Pedagogia • Graduação',
-    status: 'Ativo',
     avatarInitials: 'LA',
+    registeredAt: D(-790),
   },
   {
     id: 'u-3',
@@ -52,9 +83,10 @@ export const INITIAL_USERS = [
     email: 'beatriz.santos@ulbra.br',
     role: 'aluno',
     roleLabel: 'Docente',
+    readerType: 'Docente',
     department: 'Filosofia • Corpo Docente',
-    status: 'Ativo',
     avatarInitials: 'BS',
+    registeredAt: D(-18),
   },
   {
     id: 'u-4',
@@ -64,9 +96,10 @@ export const INITIAL_USERS = [
     email: 'rafael.oliveira@rede.ulbra.br',
     role: 'aluno',
     roleLabel: 'Estudante',
+    readerType: 'Estudante',
     department: 'Economia • Mestrado',
-    status: 'Suspenso', // Possui 1 devolução em atraso (bloqueado pelo RF5)
-    avatarInitials: 'RO',
+    avatarInitials: 'RO', // Possui 1 devolução em atraso → bloqueado pelo RF05
+    registeredAt: D(-1150),
   },
   {
     id: 'u-5',
@@ -76,9 +109,10 @@ export const INITIAL_USERS = [
     email: 'camila.ferreira@rede.ulbra.br',
     role: 'aluno',
     roleLabel: 'Estudante',
+    readerType: 'Estudante',
     department: 'Direito • Graduação',
-    status: 'Ativo',
     avatarInitials: 'CF',
+    registeredAt: D(-300),
   },
   {
     id: 'u-6',
@@ -89,8 +123,8 @@ export const INITIAL_USERS = [
     role: 'bibliotecario',
     roleLabel: 'Bibliotecário',
     department: 'Biblioteca Central • Atendimento e Circulação',
-    status: 'Ativo',
     avatarInitials: 'AS',
+    registeredAt: D(-1500),
   },
   {
     id: 'u-7',
@@ -101,11 +135,12 @@ export const INITIAL_USERS = [
     role: 'admin',
     roleLabel: 'Gestor / Admin',
     department: 'Coordenação de Biblioteca • CEULP/ULBRA',
-    status: 'Ativo',
     avatarInitials: 'CM',
+    registeredAt: D(-2100),
   },
 ];
 
+// totalLoans = histórico acumulado de empréstimos da obra (usado nos relatórios de demanda)
 export const INITIAL_BOOKS = [
   {
     id: 'book-1',
@@ -122,12 +157,13 @@ export const INITIAL_BOOKS = [
     coverColor: '#0B303D',
     coverShort: 'DOM CASMURRO',
     circulationType: 'Circulação Livre',
+    totalLoans: 84,
     copies: [
       { tombo: 'TB-00642-1', type: 'Circulação Livre', location: 'Estante B • Prat. 4', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-00642-2', type: 'Circulação Livre', location: 'Estante B • Prat. 4', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-00642-3', type: 'Circulação Livre', location: 'Estante B • Prat. 4', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-00642-4', type: 'Circulação Livre', location: 'Estante B • Prat. 4', status: 'Disponível', holder: null, dueDate: null },
-      { tombo: 'TB-00642-5', type: 'Reserva Balcão', location: 'Armário Balcão A', status: 'Reservado', holder: 'Lucas Almeida', dueDate: '21/10/2026' },
+      { tombo: 'TB-00642-5', type: 'Reserva Balcão', location: 'Armário Balcão A', status: 'Reservado', holder: 'Lucas Almeida', dueDate: RESERVATION_DATES.lucasDomCasmurro.deadline },
       { tombo: 'TB-00642-6', type: 'Consulta Local', location: 'Mesa de Referência 1', status: 'Consulta local', holder: 'Uso no recinto', dueDate: null },
     ],
   },
@@ -146,12 +182,13 @@ export const INITIAL_BOOKS = [
     coverColor: '#185266',
     coverShort: 'PAULO FREIRE',
     circulationType: 'Circulação Livre',
+    totalLoans: 59,
     copies: [
       { tombo: 'TB-00318-1', type: 'Circulação Livre', location: 'Estante E • Prat. 2', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-00318-2', type: 'Circulação Livre', location: 'Estante E • Prat. 2', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-00318-3', type: 'Circulação Livre', location: 'Estante E • Prat. 2', status: 'Disponível', holder: null, dueDate: null },
-      { tombo: 'TB-00318-4', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Mariana Costa', dueDate: '22/10/2026' },
-      { tombo: 'TB-00318-5', type: 'Restauração', location: 'Bancada de Restauro', status: 'Em reparo', holder: 'Lombada danificada', dueDate: null },
+      { tombo: 'TB-00318-4', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Mariana Costa', dueDate: LOAN_DATES.marianaPedagogia.due },
+      { tombo: 'TB-00318-5', type: 'Restauração', previousType: 'Circulação Livre', location: 'Bancada de Restauro', status: 'Em reparo', holder: 'Lombada danificada • Enviado para encadernação', dueDate: null },
     ],
   },
   {
@@ -169,11 +206,11 @@ export const INITIAL_BOOKS = [
     coverColor: '#1E2528',
     coverShort: 'THOMAS KUHN',
     circulationType: 'Circulação Livre',
-    nextReturnDate: '22/10/2026',
+    totalLoans: 41,
     copies: [
-      { tombo: 'TB-00501-1', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Beatriz Santos', dueDate: '22/10/2026' },
-      { tombo: 'TB-00501-2', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Lucas Almeida', dueDate: '24/10/2026' },
-      { tombo: 'TB-00501-3', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Camila Ferreira', dueDate: '25/10/2026' },
+      { tombo: 'TB-00501-1', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Beatriz Santos', dueDate: LOAN_DATES.beatrizKuhn.due },
+      { tombo: 'TB-00501-2', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Lucas Almeida', dueDate: LOAN_DATES.lucasKuhn.due },
+      { tombo: 'TB-00501-3', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Camila Ferreira', dueDate: LOAN_DATES.camilaKuhn.due },
     ],
   },
   {
@@ -191,20 +228,21 @@ export const INITIAL_BOOKS = [
     coverColor: '#1B4D3E',
     coverShort: 'METODOLOGIA',
     circulationType: 'Circulação Livre',
+    totalLoans: 48,
     copies: [
       { tombo: 'TB-00812-1', type: 'Circulação Livre', location: 'Estante C • Prat. 3', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-00812-2', type: 'Circulação Livre', location: 'Estante C • Prat. 3', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-00812-3', type: 'Circulação Livre', location: 'Estante C • Prat. 3', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-00812-4', type: 'Circulação Livre', location: 'Estante C • Prat. 3', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-00812-5', type: 'Circulação Livre', location: 'Estante C • Prat. 3', status: 'Disponível', holder: null, dueDate: null },
-      { tombo: 'TB-00812-6', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Mariana Costa', dueDate: '26/10/2026' },
+      { tombo: 'TB-00812-6', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Mariana Costa', dueDate: LOAN_DATES.marianaMetodologia.due },
     ],
   },
   {
     id: 'book-5',
     title: 'Morfologia urbana e desenho da cidade',
-    author: 'José R. A. Lamas',
-    publisher: 'Gulbenkian',
+    author: 'José M. Ressano Garcia Lamas',
+    publisher: 'Fundação Calouste Gulbenkian',
     year: 2014,
     edition: '7ª Edição',
     isbn: '978-972-31-0903-0',
@@ -215,6 +253,7 @@ export const INITIAL_BOOKS = [
     coverColor: '#2E5B6B',
     coverShort: 'URBANA',
     circulationType: 'Consulta Local',
+    totalLoans: 0,
     copies: [
       { tombo: 'TB-00711-1', type: 'Consulta Local', location: 'Obras Raras • Mesa 2', status: 'Consulta local', holder: 'Uso exclusivo no recinto', dueDate: null },
       { tombo: 'TB-00711-2', type: 'Consulta Local', location: 'Obras Raras • Mesa 2', status: 'Consulta local', holder: 'Uso exclusivo no recinto', dueDate: null },
@@ -222,7 +261,7 @@ export const INITIAL_BOOKS = [
   },
   {
     id: 'book-6',
-    title: 'Código Limpo: Habilidades Práticas do Agile',
+    title: 'Código Limpo: Habilidades Práticas do Agile Software',
     author: 'Robert C. Martin',
     publisher: 'Alta Books',
     year: 2020,
@@ -235,6 +274,7 @@ export const INITIAL_BOOKS = [
     coverColor: '#0F4C81',
     coverShort: 'CLEAN CODE',
     circulationType: 'Circulação Livre',
+    totalLoans: 52,
     copies: [
       { tombo: 'TB-01244-1', type: 'Circulação Livre', location: 'Estante D • Prat. 1', status: 'Disponível', holder: null, dueDate: null },
       { tombo: 'TB-01244-2', type: 'Circulação Livre', location: 'Estante D • Prat. 1', status: 'Disponível', holder: null, dueDate: null },
@@ -259,15 +299,17 @@ export const INITIAL_BOOKS = [
     coverColor: '#8B1E1E',
     coverShort: 'O CAPITAL',
     circulationType: 'Circulação Livre',
-    nextReturnDate: '25/10/2026',
+    totalLoans: 67,
     copies: [
-      { tombo: 'TB-00264-1', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Beatriz Santos', dueDate: '25/10/2026' },
-      { tombo: 'TB-00264-2', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Rafael Oliveira', dueDate: '15/10/2026' },
-      { tombo: 'TB-00264-3', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Lucas Almeida', dueDate: '27/10/2026' },
+      { tombo: 'TB-00264-1', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Beatriz Santos', dueDate: LOAN_DATES.beatrizCapital.due },
+      { tombo: 'TB-00264-2', type: 'Circulação Livre', location: 'Em circulação', status: 'Emprestado', holder: 'Rafael Oliveira', dueDate: LOAN_DATES.rafaelCapital.due },
+      { tombo: 'TB-00264-3', type: 'Restauração', previousType: 'Circulação Livre', location: 'Bancada de Restauro', status: 'Em reparo', holder: 'Folhas soltas • Reencadernação', dueDate: null },
     ],
   },
 ];
 
+// Empréstimos ativos. Os campos "daysOverdue" e "status" (No prazo / Em Atraso)
+// são calculados automaticamente pelo sistema a partir da data de devolução.
 export const INITIAL_LOANS = [
   {
     id: 'loan-1',
@@ -279,11 +321,9 @@ export const INITIAL_LOANS = [
     userName: 'Mariana Costa',
     userMatricula: '20240182',
     userType: 'Aluno',
-    checkoutDate: '08/10/2026',
-    dueDate: '22/10/2026',
-    daysOverdue: 0,
+    checkoutDate: LOAN_DATES.marianaPedagogia.checkout,
+    dueDate: LOAN_DATES.marianaPedagogia.due,
     renewalsCount: 0,
-    status: 'No prazo',
   },
   {
     id: 'loan-2',
@@ -295,11 +335,9 @@ export const INITIAL_LOANS = [
     userName: 'Mariana Costa',
     userMatricula: '20240182',
     userType: 'Aluno',
-    checkoutDate: '12/10/2026',
-    dueDate: '26/10/2026',
-    daysOverdue: 0,
+    checkoutDate: LOAN_DATES.marianaMetodologia.checkout,
+    dueDate: LOAN_DATES.marianaMetodologia.due,
     renewalsCount: 1,
-    status: 'No prazo',
   },
   {
     id: 'loan-3',
@@ -311,11 +349,9 @@ export const INITIAL_LOANS = [
     userName: 'Rafael Oliveira',
     userMatricula: '20220376',
     userType: 'Aluno',
-    checkoutDate: '01/10/2026',
-    dueDate: '15/10/2026',
-    daysOverdue: 3, // RF8: R$ 5,00 + (3 * R$ 2,00) = R$ 11,00
+    checkoutDate: LOAN_DATES.rafaelCapital.checkout,
+    dueDate: LOAN_DATES.rafaelCapital.due, // RF08: 3 dias de atraso → R$ 5,00 + (3 × R$ 2,00) = R$ 11,00
     renewalsCount: 0,
-    status: 'Em Atraso',
   },
   {
     id: 'loan-4',
@@ -327,14 +363,68 @@ export const INITIAL_LOANS = [
     userName: 'Beatriz Santos',
     userMatricula: '20250109',
     userType: 'Docente',
-    checkoutDate: '08/10/2026',
-    dueDate: '22/10/2026',
-    daysOverdue: 0,
+    checkoutDate: LOAN_DATES.beatrizKuhn.checkout,
+    dueDate: LOAN_DATES.beatrizKuhn.due,
     renewalsCount: 0,
-    status: 'No prazo',
+  },
+  {
+    id: 'loan-5',
+    bookId: 'book-3',
+    bookTitle: 'A estrutura das revoluções científicas',
+    author: 'Thomas S. Kuhn',
+    tombo: 'TB-00501-2',
+    userId: 'u-2',
+    userName: 'Lucas Almeida',
+    userMatricula: '20230245',
+    userType: 'Aluno',
+    checkoutDate: LOAN_DATES.lucasKuhn.checkout,
+    dueDate: LOAN_DATES.lucasKuhn.due,
+    renewalsCount: 0,
+  },
+  {
+    id: 'loan-6',
+    bookId: 'book-3',
+    bookTitle: 'A estrutura das revoluções científicas',
+    author: 'Thomas S. Kuhn',
+    tombo: 'TB-00501-3',
+    userId: 'u-5',
+    userName: 'Camila Ferreira',
+    userMatricula: '20240058',
+    userType: 'Aluno',
+    checkoutDate: LOAN_DATES.camilaKuhn.checkout,
+    dueDate: LOAN_DATES.camilaKuhn.due,
+    renewalsCount: 0,
+  },
+  {
+    id: 'loan-7',
+    bookId: 'book-7',
+    bookTitle: 'O capital — Livro I: O processo de produção',
+    author: 'Karl Marx',
+    tombo: 'TB-00264-1',
+    userId: 'u-3',
+    userName: 'Beatriz Santos',
+    userMatricula: '20250109',
+    userType: 'Docente',
+    checkoutDate: LOAN_DATES.beatrizCapital.checkout,
+    dueDate: LOAN_DATES.beatrizCapital.due,
+    renewalsCount: 0,
   },
 ];
 
+// Histórico de empréstimos já devolvidos (alimenta o gráfico de circulação e os relatórios)
+export const INITIAL_LOAN_HISTORY = [
+  { id: 'hist-1', bookId: 'book-4', bookTitle: 'Fundamentos de metodologia científica', tombo: 'TB-00812-2', userId: 'u-2', userName: 'Lucas Almeida', checkoutDate: D(-56), dueDate: D(-42), returnDate: D(-40), daysOverdue: 2, fineId: 'MUL-095' },
+  { id: 'hist-2', bookId: 'book-6', bookTitle: 'Código Limpo: Habilidades Práticas do Agile Software', tombo: 'TB-01244-1', userId: 'u-1', userName: 'Mariana Costa', checkoutDate: D(-50), dueDate: D(-36), returnDate: D(-35), daysOverdue: 1, fineId: 'MUL-098' },
+  { id: 'hist-3', bookId: 'book-2', bookTitle: 'Pedagogia da autonomia', tombo: 'TB-00318-2', userId: 'u-3', userName: 'Beatriz Santos', checkoutDate: D(-38), dueDate: D(-24), returnDate: D(-20), daysOverdue: 4, fineId: 'MUL-100' },
+  { id: 'hist-4', bookId: 'book-4', bookTitle: 'Fundamentos de metodologia científica', tombo: 'TB-00812-1', userId: 'u-4', userName: 'Rafael Oliveira', checkoutDate: D(-30), dueDate: D(-16), returnDate: D(-16), daysOverdue: 0, fineId: null },
+  { id: 'hist-5', bookId: 'book-1', bookTitle: 'Dom Casmurro', tombo: 'TB-00642-2', userId: 'u-1', userName: 'Mariana Costa', checkoutDate: D(-26), dueDate: D(-12), returnDate: D(-12), daysOverdue: 0, fineId: null },
+  { id: 'hist-6', bookId: 'book-1', bookTitle: 'Dom Casmurro', tombo: 'TB-00642-1', userId: 'u-5', userName: 'Camila Ferreira', checkoutDate: D(-19), dueDate: D(-5), returnDate: D(-6), daysOverdue: 0, fineId: null },
+  { id: 'hist-7', bookId: 'book-6', bookTitle: 'Código Limpo: Habilidades Práticas do Agile Software', tombo: 'TB-01244-3', userId: 'u-2', userName: 'Lucas Almeida', checkoutDate: D(-18), dueDate: D(-4), returnDate: D(-5), daysOverdue: 0, fineId: null },
+  { id: 'hist-8', bookId: 'book-6', bookTitle: 'Código Limpo: Habilidades Práticas do Agile Software', tombo: 'TB-01244-2', userId: 'u-3', userName: 'Beatriz Santos', checkoutDate: D(-16), dueDate: D(-2), returnDate: D(-3), daysOverdue: 0, fineId: null },
+  { id: 'hist-9', bookId: 'book-2', bookTitle: 'Pedagogia da autonomia', tombo: 'TB-00318-1', userId: 'u-5', userName: 'Camila Ferreira', checkoutDate: D(-14), dueDate: D(0), returnDate: D(0), daysOverdue: 0, fineId: null },
+];
+
+// queuePosition é calculada dinamicamente pelo sistema (ordem de solicitação por obra)
 export const INITIAL_RESERVATIONS = [
   {
     id: 'R-0261',
@@ -344,11 +434,11 @@ export const INITIAL_RESERVATIONS = [
     userId: 'u-2',
     userName: 'Lucas Almeida',
     userMatricula: '20230245',
-    requestDate: '15/10/2026',
-    pickupDeadline: '21/10/2026 • 18h',
+    requestDate: RESERVATION_DATES.lucasDomCasmurro.request,
+    readyDate: RESERVATION_DATES.lucasDomCasmurro.request,
+    pickupDeadline: RESERVATION_DATES.lucasDomCasmurro.deadline,
     status: 'Pronta para retirada',
     tomboAllocated: 'TB-00642-5',
-    queuePosition: null,
   },
   {
     id: 'R-0262',
@@ -358,11 +448,11 @@ export const INITIAL_RESERVATIONS = [
     userId: 'u-1',
     userName: 'Mariana Costa',
     userMatricula: '20240182',
-    requestDate: '15/10/2026',
-    pickupDeadline: 'Aguardando devolução (Prev. 22/10)',
+    requestDate: RESERVATION_DATES.marianaKuhn.request,
+    readyDate: null,
+    pickupDeadline: null,
     status: 'Em espera',
     tomboAllocated: null,
-    queuePosition: 1,
   },
   {
     id: 'R-0263',
@@ -372,73 +462,68 @@ export const INITIAL_RESERVATIONS = [
     userId: 'u-5',
     userName: 'Camila Ferreira',
     userMatricula: '20240058',
-    requestDate: '16/10/2026',
-    pickupDeadline: 'Aguardando devolução',
+    requestDate: RESERVATION_DATES.camilaCapital.request,
+    readyDate: null,
+    pickupDeadline: null,
     status: 'Em espera',
     tomboAllocated: null,
-    queuePosition: 1,
   },
 ];
 
+// Multas já registradas (geradas na devolução). Multas de empréstimos ainda em atraso
+// são calculadas automaticamente (RF08) e aparecem como "Em apuração" até a devolução.
 export const INITIAL_FINES = [
   {
-    id: 'FINE-101',
-    userId: 'u-4',
-    userName: 'Rafael Oliveira',
-    userMatricula: '20220376',
-    bookTitle: 'O capital — Livro I: O processo de produção',
-    tombo: 'TB-00264-2',
-    daysOverdue: 3,
-    amount: 11.0, // R$ 5,00 + 3 x R$ 2,00 (RF8)
-    status: 'Pendente',
-    date: '19/10/2026',
+    id: 'MUL-100',
+    userId: 'u-3',
+    userName: 'Beatriz Santos',
+    userMatricula: '20250109',
+    bookTitle: 'Pedagogia da autonomia',
+    tombo: 'TB-00318-2',
+    daysOverdue: 4,
+    amount: fineFor(4), // R$ 5,00 + 4 × R$ 2,00 = R$ 13,00
+    status: 'Quitada',
+    date: D(-20),
+    paidDate: D(-20),
   },
   {
-    id: 'FINE-098',
+    id: 'MUL-098',
     userId: 'u-1',
     userName: 'Mariana Costa',
     userMatricula: '20240182',
-    bookTitle: 'Código Limpo: Habilidades Práticas do Agile',
+    bookTitle: 'Código Limpo: Habilidades Práticas do Agile Software',
     tombo: 'TB-01244-1',
     daysOverdue: 1,
-    amount: 7.0, // R$ 5,00 + 1 x R$ 2,00 (RF8)
+    amount: fineFor(1), // R$ 5,00 + 1 × R$ 2,00 = R$ 7,00
     status: 'Quitada',
-    date: '14/09/2026',
+    date: D(-35),
+    paidDate: D(-35),
+  },
+  {
+    id: 'MUL-095',
+    userId: 'u-2',
+    userName: 'Lucas Almeida',
+    userMatricula: '20230245',
+    bookTitle: 'Fundamentos de metodologia científica',
+    tombo: 'TB-00812-2',
+    daysOverdue: 2,
+    amount: fineFor(2), // R$ 5,00 + 2 × R$ 2,00 = R$ 9,00
+    status: 'Quitada',
+    date: D(-40),
+    paidDate: D(-40),
   },
 ];
 
+// Itens patrimoniais que não são exemplares do catálogo de livros (TCC, periódicos e
+// registros baixados). Os exemplares dos livros entram no inventário automaticamente.
 export const INITIAL_INVENTORY_ITEMS = [
   {
     tombo: 'TCC-2026-0042',
     materialType: 'TCC / Monografia',
     title: 'Sistema de Gerenciamento Bibliotecário',
-    subtitle: 'Mariana Costa • Orient.: Profª. Caroline Pacheco',
+    subtitle: 'Mariana Costa • Orient.: Prof.ª Caroline Pacheco',
     location: 'Arquivo TCC • Gav. B',
     status: 'Consulta local',
-  },
-  {
-    tombo: 'TB-00642-1',
-    materialType: 'Livro',
-    title: 'Dom Casmurro (3ª Edição)',
-    subtitle: 'Machado de Assis • ISBN 978-85-08-12345-6',
-    location: 'Estante B • Prat. 4',
-    status: 'Disponível',
-  },
-  {
-    tombo: 'TB-01244-2',
-    materialType: 'Livro',
-    title: 'Código Limpo (Clean Code)',
-    subtitle: 'Robert C. Martin • ISBN 978-85-7608-267-5',
-    location: 'Estante D • Prat. 1',
-    status: 'Disponível',
-  },
-  {
-    tombo: 'TB-00318-5',
-    materialType: 'Livro',
-    title: 'Pedagogia da autonomia',
-    subtitle: 'Lombada danificada • Enviado para encadernação',
-    location: 'Bancada de Restauro',
-    status: 'Em reparo',
   },
   {
     tombo: 'TB-00109-2',
@@ -458,6 +543,8 @@ export const INITIAL_INVENTORY_ITEMS = [
   },
 ];
 
+// Notificações registradas (cada leitor vê apenas as suas; a equipe vê as de "staff").
+// Alertas operacionais da equipe (atrasos e retiradas pendentes) são gerados automaticamente.
 export const INITIAL_NOTIFICATIONS = [
   {
     id: 'notif-1',
@@ -465,7 +552,7 @@ export const INITIAL_NOTIFICATIONS = [
     userId: 'u-1',
     type: 'warning',
     title: 'Prazo de devolução próximo',
-    message: 'O exemplar "Pedagogia da autonomia" (TB-00318-4) vence em 22/10/2026. Você ainda pode renovar por +14 dias.',
+    message: `O exemplar "Pedagogia da autonomia" (TB-00318-4) vence em ${LOAN_DATES.marianaPedagogia.due}. Você ainda pode renovar por +${BUSINESS_RULES.LOAN_DAYS} dias.`,
     time: 'Hoje, 09:30',
     read: false,
   },
@@ -474,36 +561,57 @@ export const INITIAL_NOTIFICATIONS = [
     targetRole: 'aluno',
     userId: 'u-1',
     type: 'info',
-    title: 'Posição na Fila de Espera',
-    message: 'Você ocupa o 1º lugar na fila de espera para "A estrutura das revoluções científicas". Previsão de liberação: 22/10/2026.',
+    title: 'Posição na fila de espera',
+    message: `Você ocupa o 1º lugar na fila de espera para "A estrutura das revoluções científicas". Previsão de liberação: ${LOAN_DATES.beatrizKuhn.due}.`,
     time: 'Ontem, 16:15',
     read: false,
   },
   {
     id: 'notif-3',
-    targetRole: 'staff',
-    type: 'warning',
-    title: 'Retirada de reserva vence hoje',
-    message: 'Dom Casmurro (Exemplar TB-00642-5) • Lucas Almeida até às 18h.',
-    time: 'Hoje, 08:00',
+    targetRole: 'aluno',
+    userId: 'u-2',
+    type: 'success',
+    title: 'Reserva pronta para retirada',
+    message: `O exemplar TB-00642-5 de "Dom Casmurro" está separado no Balcão da Biblioteca Central até ${RESERVATION_DATES.lucasDomCasmurro.deadline} às ${BUSINESS_RULES.PICKUP_CLOSING_HOUR}h.`,
+    time: 'Ontem, 10:12',
     read: false,
   },
   {
     id: 'notif-4',
-    targetRole: 'staff',
+    targetRole: 'aluno',
+    userId: 'u-4',
     type: 'danger',
-    title: 'Devolução em atraso detectada',
-    message: 'O capital — Livro I (Rafael Oliveira) está com 3 dias de atraso. Multa acumulada: R$ 11,00.',
+    title: 'Devolução em atraso',
+    message: `"O capital — Livro I" (TB-00264-2) venceu em ${LOAN_DATES.rafaelCapital.due}. Seu cadastro está bloqueado para novos empréstimos e renovações até a regularização (RF05).`,
     time: 'Hoje, 08:05',
     read: false,
   },
   {
     id: 'notif-5',
+    targetRole: 'aluno',
+    userId: 'u-5',
+    type: 'info',
+    title: 'Entrada na fila de espera',
+    message: `Você ocupa o 1º lugar na fila de espera para "O capital — Livro I: O processo de produção". Previsão de liberação: ${LOAN_DATES.beatrizCapital.due}.`,
+    time: 'Ontem, 14:40',
+    read: true,
+  },
+  {
+    id: 'notif-6',
     targetRole: 'staff',
     type: 'info',
-    title: '24 novas obras incorporadas ao acervo',
-    message: 'Títulos catalogados e etiquetados no lote de outubro/2026.',
-    time: '15/10/2026',
+    title: 'Exemplar encaminhado para restauração',
+    message: 'O capital — Livro I (TB-00264-3) foi enviado à Bancada de Restauro para reencadernação.',
+    time: D(-2),
+    read: true,
+  },
+  {
+    id: 'notif-7',
+    targetRole: 'staff',
+    type: 'info',
+    title: 'Novo TCC incorporado ao acervo',
+    message: 'TCC-2026-0042 — "Sistema de Gerenciamento Bibliotecário" catalogado no Arquivo TCC (Gav. B) para consulta local.',
+    time: D(-6),
     read: true,
   },
 ];

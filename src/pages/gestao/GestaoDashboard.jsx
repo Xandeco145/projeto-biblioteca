@@ -7,27 +7,74 @@ import {
   CheckSquare,
   AlertCircle,
   ChevronRight,
+  CheckCheck,
 } from 'lucide-react';
 import { useLibrary } from '../../context/LibraryContext';
+import { dateFromToday, formatPercent } from '../../utils/format';
 
-const WEEKLY_DATA = [
-  { day: '29 SET', loans: 24, returns: 19 },
-  { day: '30 SET', loans: 31, returns: 26 },
-  { day: '01 OUT', loans: 38, returns: 29 },
-  { day: '02 OUT', loans: 34, returns: 31 },
-  { day: '03 OUT', loans: 16, returns: 14 },
-  { day: '04 OUT', loans: 8, returns: 5 },
-  { day: '05 OUT', loans: 19, returns: 13 },
-];
+const MONTHS = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+const dayLabel = (brDate) => `${brDate.slice(0, 2)} ${MONTHS[Number(brDate.slice(3, 5)) - 1]}`;
+
+const ALERT_COLORS = {
+  danger: 'var(--color-danger-text)',
+  warning: 'var(--color-warning-text)',
+  success: 'var(--color-success-text)',
+  info: 'var(--color-deep-teal)',
+};
 
 const GestaoDashboard = () => {
-  const { books, loans, reservations, users, notifications, setActiveTab } = useLibrary();
+  const {
+    books,
+    loans,
+    loanHistory,
+    reservations,
+    users,
+    staffAlerts,
+    today,
+    setActiveTab,
+    getVisibleNotifications,
+    markAllNotificationsRead,
+  } = useLibrary();
 
+  const totalCopies = books.reduce((acc, b) => acc + b.copies.length, 0);
   const readyReservations = reservations.filter((r) => r.status === 'Pronta para retirada').length;
   const waitingReservations = reservations.filter((r) => r.status === 'Em espera').length;
   const overdueLoans = loans.filter((l) => l.daysOverdue > 0).length;
+  const dueToday = loans.filter((l) => l.dueDate === today).length;
   const activeUsersCount = users.filter((u) => u.status === 'Ativo').length;
-  const staffNotifications = notifications.filter((n) => n.targetRole === 'staff');
+  const suspendedCount = users.filter((u) => u.status === 'Suspenso').length;
+
+  // Circulação dos últimos 7 dias calculada a partir dos registros reais
+  const allCheckouts = [...loans, ...loanHistory];
+  const buildSeries = (startOffset) =>
+    Array.from({ length: 7 }, (_, i) => {
+      const date = dateFromToday(startOffset + i);
+      return {
+        date,
+        day: dayLabel(date),
+        loans: allCheckouts.filter((l) => l.checkoutDate === date).length,
+        returns: loanHistory.filter((h) => h.returnDate === date).length,
+      };
+    });
+  const weeklyData = buildSeries(-6);
+  const previousWeek = buildSeries(-13);
+  const weekLoans = weeklyData.reduce((acc, d) => acc + d.loans, 0);
+  const weekReturns = weeklyData.reduce((acc, d) => acc + d.returns, 0);
+  const previousTotal = previousWeek.reduce((acc, d) => acc + d.loans + d.returns, 0);
+  const currentTotal = weekLoans + weekReturns;
+  const maxValue = Math.max(1, ...weeklyData.map((d) => Math.max(d.loans, d.returns)));
+  const barHeight = (value) => (value === 0 ? 0 : Math.max(6, Math.round((value / maxValue) * 70)));
+
+  let comparison = 'Sem movimentação na semana anterior para comparação';
+  let comparisonColor = 'var(--color-text-secondary)';
+  if (previousTotal > 0) {
+    const variation = ((currentTotal - previousTotal) / previousTotal) * 100;
+    comparison = `${variation >= 0 ? '+' : ''}${formatPercent(variation, 0)} de circulação vs. semana anterior`;
+    comparisonColor = variation >= 0 ? 'var(--color-success-text)' : 'var(--color-danger-text)';
+  }
+
+  const staffNotifications = getVisibleNotifications();
+  const unreadNotifications = staffNotifications.filter((n) => !n.read).length;
 
   return (
     <div>
@@ -40,9 +87,9 @@ const GestaoDashboard = () => {
             </span>
             <BookOpen size={18} color="#185266" />
           </div>
-          <div className="kpi-value">{1241 + books.length}</div>
+          <div className="kpi-value">{books.length}</div>
           <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-            +24 neste mês
+            {totalCopies} exemplares cadastrados
           </div>
         </div>
 
@@ -53,9 +100,9 @@ const GestaoDashboard = () => {
             </span>
             <ArrowLeftRight size={18} color="#185266" />
           </div>
-          <div className="kpi-value">{182 + loans.length}</div>
+          <div className="kpi-value">{loans.length}</div>
           <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-            12 devoluções previstas hoje
+            {dueToday} devolução(ões) prevista(s) hoje • {overdueLoans} em atraso
           </div>
         </div>
 
@@ -66,9 +113,9 @@ const GestaoDashboard = () => {
             </span>
             <Bookmark size={18} color="#D68C45" />
           </div>
-          <div className="kpi-value">0{reservations.length}</div>
+          <div className="kpi-value">{String(reservations.length).padStart(2, '0')}</div>
           <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--color-warning-text)' }}>
-            {readyReservations} prontas • {waitingReservations} em espera
+            {readyReservations} {readyReservations === 1 ? 'pronta' : 'prontas'} • {waitingReservations} em espera
           </div>
         </div>
 
@@ -79,9 +126,9 @@ const GestaoDashboard = () => {
             </span>
             <Users size={18} color="#185266" />
           </div>
-          <div className="kpi-value">{835 + activeUsersCount}</div>
+          <div className="kpi-value">{activeUsersCount}</div>
           <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-            +18 neste mês
+            {suspendedCount} com pendências (RF05)
           </div>
         </div>
       </div>
@@ -102,7 +149,7 @@ const GestaoDashboard = () => {
             Informações Detalhadas
           </h2>
           <span className="mono-code" style={{ color: 'var(--color-text-secondary)' }}>
-            29 SET — 05 OUT 2026
+            {weeklyData[0].day} — {weeklyData[6].day} {weeklyData[6].date.slice(6)}
           </span>
         </div>
 
@@ -121,6 +168,8 @@ const GestaoDashboard = () => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 marginBottom: '16px',
+                flexWrap: 'wrap',
+                gap: '8px',
               }}
             >
               <strong style={{ fontSize: '14px', color: 'var(--color-deep-teal)' }}>
@@ -128,25 +177,11 @@ const GestaoDashboard = () => {
               </strong>
               <div style={{ display: 'flex', gap: '16px', fontSize: '12.5px' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span
-                    style={{
-                      width: '10px',
-                      height: '10px',
-                      borderRadius: '2px',
-                      backgroundColor: '#0B303D',
-                    }}
-                  />
+                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: '#0B303D' }} />
                   Empréstimos
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span
-                    style={{
-                      width: '10px',
-                      height: '10px',
-                      borderRadius: '2px',
-                      backgroundColor: '#D68C45',
-                    }}
-                  />
+                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: '#D68C45' }} />
                   Devoluções
                 </span>
               </div>
@@ -158,47 +193,56 @@ const GestaoDashboard = () => {
                 gridTemplateColumns: 'repeat(7, 1fr)',
                 gap: '12px',
                 alignItems: 'end',
-                height: '120px',
+                height: '130px',
                 paddingTop: '12px',
               }}
             >
-              {WEEKLY_DATA.map((item) => (
-                <div key={item.day} style={{ textAlign: 'center' }}>
+              {weeklyData.map((item) => (
+                <div key={item.date} style={{ textAlign: 'center' }}>
                   <div
                     style={{
                       display: 'flex',
                       justifyContent: 'center',
                       alignItems: 'flex-end',
                       gap: '5px',
-                      height: '88px',
+                      height: '96px',
                       borderBottom: '1px solid var(--color-border)',
                       paddingBottom: '4px',
                     }}
                   >
-                    <div
-                      title={`Empréstimos: ${item.loans}`}
-                      style={{
-                        width: '14px',
-                        height: `${item.loans * 2}px`,
-                        backgroundColor: '#0B303D',
-                        borderRadius: '3px 3px 0 0',
-                      }}
-                    />
-                    <div
-                      title={`Devoluções: ${item.returns}`}
-                      style={{
-                        width: '14px',
-                        height: `${item.returns * 2}px`,
-                        backgroundColor: '#D68C45',
-                        borderRadius: '3px 3px 0 0',
-                      }}
-                    />
+                    {[
+                      { key: 'loans', value: item.loans, color: '#0B303D', label: 'Empréstimos' },
+                      { key: 'returns', value: item.returns, color: '#D68C45', label: 'Devoluções' },
+                    ].map((bar) => (
+                      <div
+                        key={bar.key}
+                        title={`${bar.label} em ${item.date}: ${bar.value}`}
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}
+                      >
+                        <span className="mono-code" style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>
+                          {bar.value}
+                        </span>
+                        <div
+                          style={{
+                            width: '14px',
+                            height: `${barHeight(bar.value)}px`,
+                            backgroundColor: bar.color,
+                            borderRadius: '3px 3px 0 0',
+                          }}
+                        />
+                      </div>
+                    ))}
                   </div>
                   <div
                     className="mono-code"
-                    style={{ fontSize: '10.5px', color: 'var(--color-text-secondary)', marginTop: '6px' }}
+                    style={{
+                      fontSize: '10.5px',
+                      color: item.date === today ? 'var(--color-deep-teal)' : 'var(--color-text-secondary)',
+                      fontWeight: item.date === today ? 700 : 400,
+                      marginTop: '6px',
+                    }}
                   >
-                    {item.day}
+                    {item.date === today ? 'HOJE' : item.day}
                   </div>
                 </div>
               ))}
@@ -213,7 +257,7 @@ const GestaoDashboard = () => {
             <div style={{ display: 'flex', gap: '28px', marginBottom: '10px' }}>
               <div>
                 <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--color-deep-teal)' }}>
-                  156
+                  {weekLoans}
                 </div>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                   empréstimos
@@ -221,16 +265,14 @@ const GestaoDashboard = () => {
               </div>
               <div>
                 <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--color-deep-teal)' }}>
-                  128
+                  {weekReturns}
                 </div>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                   devoluções
                 </div>
               </div>
             </div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-success-text)' }}>
-              +12% de circulação vs. semana anterior
-            </div>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: comparisonColor }}>{comparison}</div>
           </div>
         </div>
       </div>
@@ -255,7 +297,7 @@ const GestaoDashboard = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '14px' }}>
             <button
               type="button"
-              onClick={() => setActiveTab('Empréstimos')}
+              onClick={() => setActiveTab('Empréstimos', { type: 'new-loan' })}
               style={shortcutCardStyle}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -269,11 +311,7 @@ const GestaoDashboard = () => {
               </div>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('Empréstimos')}
-              style={shortcutCardStyle}
-            >
+            <button type="button" onClick={() => setActiveTab('Empréstimos')} style={shortcutCardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 700, color: 'var(--color-deep-teal)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <CheckSquare size={16} color="#185266" /> Devoluções
@@ -285,11 +323,7 @@ const GestaoDashboard = () => {
               </div>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('Reservas')}
-              style={shortcutCardStyle}
-            >
+            <button type="button" onClick={() => setActiveTab('Reservas')} style={shortcutCardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 700, color: 'var(--color-deep-teal)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Bookmark size={16} color="#185266" /> Reservas
@@ -297,15 +331,11 @@ const GestaoDashboard = () => {
                 <ChevronRight size={16} color="#525E62" />
               </div>
               <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', marginTop: '6px' }}>
-                {readyReservations} prontas para retirada
+                {readyReservations} {readyReservations === 1 ? 'pronta' : 'prontas'} para retirada
               </div>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('Catálogo')}
-              style={shortcutCardStyle}
-            >
+            <button type="button" onClick={() => setActiveTab('Catálogo')} style={shortcutCardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 700, color: 'var(--color-deep-teal)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <BookOpen size={16} color="#185266" /> Catálogo
@@ -313,15 +343,11 @@ const GestaoDashboard = () => {
                 <ChevronRight size={16} color="#525E62" />
               </div>
               <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', marginTop: '6px' }}>
-                Consultar 1.248 obras
+                Consultar {books.length} obras
               </div>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('Usuários')}
-              style={shortcutCardStyle}
-            >
+            <button type="button" onClick={() => setActiveTab('Usuários')} style={shortcutCardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 700, color: 'var(--color-deep-teal)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Users size={16} color="#185266" /> Usuários
@@ -335,7 +361,7 @@ const GestaoDashboard = () => {
 
             <button
               type="button"
-              onClick={() => setActiveTab('Empréstimos')}
+              onClick={() => setActiveTab('Empréstimos', { type: 'filter-status', status: 'Em Atraso' })}
               style={{
                 ...shortcutCardStyle,
                 backgroundColor: '#FDF2F2',
@@ -355,7 +381,7 @@ const GestaoDashboard = () => {
           </div>
         </div>
 
-        {/* Feed de Notificações */}
+        {/* Feed de Notificações (alertas automáticos + notificações da equipe) */}
         <div className="panel-card">
           <div
             style={{
@@ -363,52 +389,82 @@ const GestaoDashboard = () => {
               justifyContent: 'space-between',
               alignItems: 'center',
               marginBottom: '16px',
+              gap: '8px',
             }}
           >
             <h2 className="serif-title" style={{ fontSize: '24px' }}>
               Notificações
             </h2>
-            <span
-              style={{
-                backgroundColor: '#0B303D',
-                color: '#FAF7F0',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '12px',
-                fontWeight: 700,
-                padding: '3px 9px',
-                borderRadius: '6px',
-              }}
-            >
-              {staffNotifications.length}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {unreadNotifications > 0 && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  title="Marcar notificações como lidas"
+                  aria-label="Marcar notificações como lidas"
+                  onClick={markAllNotificationsRead}
+                  style={{ padding: '4px 6px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
+                >
+                  <CheckCheck size={16} />
+                </button>
+              )}
+              <span
+                style={{
+                  backgroundColor: '#0B303D',
+                  color: '#FAF7F0',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  padding: '3px 9px',
+                  borderRadius: '6px',
+                }}
+                title="Alertas ativos + notificações não lidas"
+              >
+                {staffAlerts.length + unreadNotifications}
+              </span>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '300px', overflowY: 'auto', paddingRight: '4px' }}>
+            {staffAlerts.length === 0 && staffNotifications.length === 0 && (
+              <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                Nenhuma notificação no momento.
+              </div>
+            )}
+
+            {staffAlerts.map((n) => (
+              <div key={n.id} style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '12px' }}>
+                <div style={{ fontWeight: 700, fontSize: '13.5px', color: ALERT_COLORS[n.type], marginBottom: '3px' }}>
+                  • {n.title}
+                </div>
+                <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.45 }}>
+                  {n.message}
+                </div>
+              </div>
+            ))}
+
             {staffNotifications.map((n) => (
               <div
                 key={n.id}
                 style={{
                   borderBottom: '1px solid var(--color-border)',
                   paddingBottom: '12px',
+                  opacity: n.read ? 0.8 : 1,
                 }}
               >
-                <div
-                  style={{
-                    fontWeight: 700,
-                    fontSize: '13.5px',
-                    color:
-                      n.type === 'danger'
-                        ? 'var(--color-danger-text)'
-                        : n.type === 'warning'
-                        ? 'var(--color-warning-text)'
-                        : 'var(--color-deep-teal)',
-                    marginBottom: '3px',
-                  }}
-                >
+                <div style={{ fontWeight: 700, fontSize: '13.5px', color: ALERT_COLORS[n.type] || ALERT_COLORS.info, marginBottom: '3px' }}>
                   • {n.title}
+                  {!n.read && (
+                    <span className="badge badge-warning" style={{ marginLeft: '6px', padding: '1px 6px', fontSize: '10.5px' }}>
+                      Nova
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', lineHeight: 1.45 }}>
                   {n.message}
+                </div>
+                <div className="mono-code" style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', marginTop: '3px' }}>
+                  {n.time}
                 </div>
               </div>
             ))}

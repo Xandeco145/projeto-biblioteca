@@ -1,21 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { AlertCircle, Bell, CheckCheck, Info, ShieldAlert } from 'lucide-react';
+import React from 'react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  Bell,
+  CheckCheck,
+  CheckCircle2,
+  Info,
+  ShieldAlert,
+} from 'lucide-react';
 import { useLibrary } from '../../context/LibraryContext';
 import { BUSINESS_RULES } from '../../data/mockData';
+import { formatCurrency } from '../../utils/format';
+
+const NOTIF_STYLE = {
+  warning: { color: '#D68C45', Icon: AlertTriangle },
+  danger: { color: '#A62626', Icon: AlertCircle },
+  success: { color: '#1B6B4A', Icon: CheckCircle2 },
+  info: { color: '#185266', Icon: Info },
+};
 
 const AlunoMultasNotificacoes = ({ initialSection = 'Multas' }) => {
-  const { currentUser, fines, notifications, markAllNotificationsRead } = useLibrary();
-  const [subTab, setSubTab] = useState(initialSection);
+  const {
+    currentUser,
+    fines,
+    setActiveTab,
+    getVisibleNotifications,
+    markNotificationsRead,
+    markAllNotificationsRead,
+  } = useLibrary();
 
-  useEffect(() => {
-    setSubTab(initialSection);
-  }, [initialSection]);
+  // A seção acompanha a aba ativa (mantém Sidebar e cabeçalho sincronizados)
+  const subTab = initialSection;
 
   const myFines = fines.filter((f) => f.userId === currentUser.id);
   const pendingFines = myFines.filter((f) => f.status === 'Pendente');
   const totalPending = pendingFines.reduce((acc, f) => acc + f.amount, 0);
+  const isBlocked = currentUser.status === 'Suspenso';
 
-  const studentNotifications = notifications.filter((n) => n.targetRole === 'aluno');
+  const myNotifications = getVisibleNotifications(currentUser);
+  const unreadCount = myNotifications.filter((n) => !n.read).length;
+
+  const fineBaseText = formatCurrency(BUSINESS_RULES.FINE_BASE);
+  const finePerDayText = formatCurrency(BUSINESS_RULES.FINE_PER_DAY);
 
   return (
     <div className="panel-card">
@@ -40,23 +66,25 @@ const AlunoMultasNotificacoes = ({ initialSection = 'Multas' }) => {
           </h1>
           <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-secondary)' }}>
             {subTab === 'Multas'
-              ? `Regra RF08: Taxa fixa de R$ ${BUSINESS_RULES.FINE_BASE.toFixed(2).replace('.', ',')} + R$ ${BUSINESS_RULES.FINE_PER_DAY.toFixed(2).replace('.', ',')} por dia de atraso.`
+              ? `Regra RF08: taxa fixa de ${fineBaseText} + ${finePerDayText} por dia de atraso.`
               : 'Alertas automáticos sobre prazos de devolução, disponibilidade de reservas e pendências (RF16).'}
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
+            type="button"
             className={`btn ${subTab === 'Multas' ? 'btn-teal' : 'btn-outline'}`}
-            onClick={() => setSubTab('Multas')}
+            onClick={() => setActiveTab('Multas')}
           >
             <AlertCircle size={15} /> Multas e Débitos
           </button>
           <button
+            type="button"
             className={`btn ${subTab === 'Notificações' ? 'btn-teal' : 'btn-outline'}`}
-            onClick={() => setSubTab('Notificações')}
+            onClick={() => setActiveTab('Notificações')}
           >
-            <Bell size={15} /> Notificações ({studentNotifications.length})
+            <Bell size={15} /> Notificações ({unreadCount > 0 ? `${unreadCount} não lidas` : myNotifications.length})
           </button>
         </div>
       </div>
@@ -66,8 +94,8 @@ const AlunoMultasNotificacoes = ({ initialSection = 'Multas' }) => {
           {/* Card de Regra de Bloqueio (RF05) */}
           <div
             style={{
-              backgroundColor: totalPending > 0 ? 'var(--color-danger-bg)' : 'var(--color-success-bg)',
-              border: `1px solid ${totalPending > 0 ? '#E5B4B4' : '#B7E0CE'}`,
+              backgroundColor: isBlocked ? 'var(--color-danger-bg)' : 'var(--color-success-bg)',
+              border: `1px solid ${isBlocked ? '#E5B4B4' : '#B7E0CE'}`,
               borderRadius: '10px',
               padding: '18px 20px',
               marginBottom: '22px',
@@ -81,24 +109,25 @@ const AlunoMultasNotificacoes = ({ initialSection = 'Multas' }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <ShieldAlert
                 size={24}
-                color={totalPending > 0 ? 'var(--color-danger-text)' : 'var(--color-success-text)'}
+                color={isBlocked ? 'var(--color-danger-text)' : 'var(--color-success-text)'}
+                style={{ flexShrink: 0 }}
               />
               <div>
                 <div
                   style={{
                     fontWeight: 700,
                     fontSize: '15px',
-                    color: totalPending > 0 ? 'var(--color-danger-text)' : 'var(--color-success-text)',
+                    color: isBlocked ? 'var(--color-danger-text)' : 'var(--color-success-text)',
                   }}
                 >
-                  {totalPending > 0
-                    ? `Bloqueio Ativo (RF05): Débito pendente de R$ ${totalPending.toFixed(2).replace('.', ',')}`
+                  {isBlocked
+                    ? `Bloqueio Ativo (RF05): ${currentUser.blockReason}${totalPending > 0 ? ` • Débito total: ${formatCurrency(totalPending)}` : ''}`
                     : 'Situação Financeira Regular — Nenhum débito em aberto'}
                 </div>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                  {totalPending > 0
-                    ? 'Compareça ao balcão da Biblioteca Central para quitar a multa e liberar novos empréstimos.'
-                    : 'Você está apto a realizar empréstimos (até 2 obras simultâneas) e reservas no sistema.'}
+                  {isBlocked
+                    ? 'Compareça ao balcão da Biblioteca Central para devolver o exemplar e quitar a multa. Novos empréstimos e renovações ficam bloqueados até a regularização.'
+                    : `Você está apto a realizar empréstimos (até ${BUSINESS_RULES.MAX_ACTIVE_LOANS} obras simultâneas) e reservas no sistema.`}
                 </div>
               </div>
             </div>
@@ -123,16 +152,14 @@ const AlunoMultasNotificacoes = ({ initialSection = 'Multas' }) => {
               </thead>
               <tbody>
                 {myFines.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-secondary)' }}>
-                      Nenhum registro de multa encontrado para esta matrícula.
-                    </td>
+                  <tr className="empty-row">
+                    <td colSpan="7">Nenhum registro de multa encontrado para esta matrícula.</td>
                   </tr>
                 ) : (
                   myFines.map((fine) => (
                     <tr key={fine.id}>
                       <td className="mono-code" style={{ fontWeight: 700 }}>
-                        {fine.id}
+                        {fine.accruing ? 'Em apuração' : fine.id}
                       </td>
                       <td>
                         <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)' }}>
@@ -142,16 +169,34 @@ const AlunoMultasNotificacoes = ({ initialSection = 'Multas' }) => {
                           Tombo: {fine.tombo}
                         </div>
                       </td>
-                      <td>{fine.date}</td>
+                      <td>
+                        {fine.accruing ? (
+                          <>
+                            <div>Venceu em {fine.date}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                              Devolução pendente
+                            </div>
+                          </>
+                        ) : (
+                          fine.date
+                        )}
+                      </td>
                       <td>{fine.daysOverdue} dia(s)</td>
                       <td className="mono-code" style={{ color: 'var(--color-text-secondary)' }}>
-                        R$ 5,00 + ({fine.daysOverdue} × R$ 2,00)
+                        {fineBaseText} + ({fine.daysOverdue} × {finePerDayText})
                       </td>
                       <td>
-                        <strong>R$ {fine.amount.toFixed(2).replace('.', ',')}</strong>
+                        <strong>{formatCurrency(fine.amount)}</strong>
+                        {fine.accruing && (
+                          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                            valor parcial (acumulando)
+                          </div>
+                        )}
                       </td>
                       <td>
-                        {fine.status === 'Pendente' ? (
+                        {fine.accruing ? (
+                          <span className="badge badge-danger">• Em aberto — devolva o exemplar</span>
+                        ) : fine.status === 'Pendente' ? (
                           <span className="badge badge-danger">• Pendente no balcão</span>
                         ) : (
                           <span className="badge badge-success">• Quitada</span>
@@ -166,51 +211,82 @@ const AlunoMultasNotificacoes = ({ initialSection = 'Multas' }) => {
         </>
       ) : (
         <>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '14px' }}>
-            <button className="btn btn-outline" onClick={markAllNotificationsRead}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+              Clique em uma notificação para marcá-la como lida.
+            </span>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={markAllNotificationsRead}
+              disabled={unreadCount === 0}
+            >
               <CheckCheck size={15} /> Marcar todas como lidas
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {studentNotifications.map((notif) => (
-              <div
-                key={notif.id}
-                style={{
-                  border: '1px solid var(--color-border)',
-                  borderLeft: `4px solid ${
-                    notif.type === 'warning' ? '#D68C45' : '#185266'
-                  }`,
-                  borderRadius: '8px',
-                  padding: '16px 20px',
-                  backgroundColor: notif.read ? '#FFFFFF' : '#FCF9F2',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  gap: '16px',
-                }}
-              >
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <Info
-                    size={20}
-                    color={notif.type === 'warning' ? '#D68C45' : '#185266'}
-                    style={{ marginTop: '2px', flexShrink: 0 }}
-                  />
-                  <div>
-                    <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)', marginBottom: '4px' }}>
-                      {notif.title}
+          {myNotifications.length === 0 ? (
+            <div
+              style={{
+                border: '1px dashed var(--color-border-strong)',
+                borderRadius: '10px',
+                padding: '32px 24px',
+                textAlign: 'center',
+                color: 'var(--color-text-secondary)',
+                fontSize: '14px',
+              }}
+            >
+              Você não possui notificações no momento.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {myNotifications.map((notif) => {
+                const { color, Icon } = NOTIF_STYLE[notif.type] || NOTIF_STYLE.info;
+                return (
+                  <div
+                    key={notif.id}
+                    role={notif.read ? undefined : 'button'}
+                    tabIndex={notif.read ? undefined : 0}
+                    onClick={() => !notif.read && markNotificationsRead([notif.id])}
+                    onKeyDown={(e) => {
+                      if (!notif.read && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault();
+                        markNotificationsRead([notif.id]);
+                      }
+                    }}
+                    style={{
+                      border: '1px solid var(--color-border)',
+                      borderLeft: `4px solid ${color}`,
+                      borderRadius: '8px',
+                      padding: '16px 20px',
+                      backgroundColor: notif.read ? '#FFFFFF' : '#FCF9F2',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      gap: '16px',
+                      cursor: notif.read ? 'default' : 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <Icon size={20} color={color} style={{ marginTop: '2px', flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          {notif.title}
+                          {!notif.read && <span className="badge badge-warning" style={{ padding: '2px 8px' }}>Nova</span>}
+                        </div>
+                        <div style={{ fontSize: '13.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                          {notif.message}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: '13.5px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                      {notif.message}
-                    </div>
+                    <span className="mono-code" style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
+                      {notif.time}
+                    </span>
                   </div>
-                </div>
-                <span className="mono-code" style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                  {notif.time}
-                </span>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
     </div>

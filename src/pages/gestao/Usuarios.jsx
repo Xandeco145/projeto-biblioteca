@@ -1,25 +1,59 @@
 import React, { useState } from 'react';
-import { Users as UsersIcon, UserCheck, UserPlus, AlertCircle, Search, Shield } from 'lucide-react';
+import {
+  Users as UsersIcon,
+  UserCheck,
+  UserPlus,
+  AlertCircle,
+  AlertTriangle,
+  Search,
+  Shield,
+} from 'lucide-react';
 import { useLibrary } from '../../context/LibraryContext';
+import { BUSINESS_RULES } from '../../data/mockData';
+import { diffInDays, formatCurrency, formatPercent } from '../../utils/format';
+
+const emptyUserForm = () => ({
+  name: '',
+  matricula: '',
+  email: '',
+  role: 'aluno',
+  readerType: 'Estudante',
+  department: '',
+});
+
+const labelStyle = { display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '5px' };
 
 const Usuarios = () => {
-  const { currentUser, users, loans, fines, addUser, updateUserRole, payFine } = useLibrary();
+  const {
+    currentUser,
+    users,
+    loans,
+    fines,
+    today,
+    addUser,
+    updateUserRole,
+    payFine,
+    setActiveTab,
+  } = useLibrary();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todos');
-  const [selectedUserModal, setSelectedUserModal] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState(null);
   const [showNewUserModal, setShowNewUserModal] = useState(false);
+  const [newUserForm, setNewUserForm] = useState(emptyUserForm);
+  const [formError, setFormError] = useState('');
+  const [roleError, setRoleError] = useState('');
 
-  const [newUserForm, setNewUserForm] = useState({
-    name: '',
-    matricula: '',
-    email: '',
-    role: 'aluno',
-    department: 'Sistemas de Informação • Graduação',
-  });
-
+  const isAdmin = currentUser.role === 'admin';
   const activeCount = users.filter((u) => u.status === 'Ativo').length;
   const suspendedCount = users.filter((u) => u.status === 'Suspenso').length;
+  const newLast30Days = users.filter(
+    (u) => u.registeredAt && diffInDays(u.registeredAt, today) <= 30
+  ).length;
+  const activePct = users.length ? (activeCount / users.length) * 100 : 0;
+
+  // Ficha sempre com os dados atualizados (situação muda ao quitar multa, devolver etc.)
+  const selectedUser = users.find((u) => u.id === selectedUserId) || null;
 
   const filteredUsers = users.filter((u) => {
     const q = searchTerm.toLowerCase().trim();
@@ -33,18 +67,32 @@ const Usuarios = () => {
     return matchesSearch && matchesStatus;
   });
 
+  const openUser = (userId) => {
+    setRoleError('');
+    setSelectedUserId(userId);
+  };
+
   const handleCreateUser = (e) => {
     e.preventDefault();
-    addUser(newUserForm);
+    const res = addUser(newUserForm);
+    if (!res.ok) {
+      setFormError(res.error);
+      return;
+    }
+    setFormError('');
     setShowNewUserModal(false);
-    setNewUserForm({
-      name: '',
-      matricula: '',
-      email: '',
-      role: 'aluno',
-      department: 'Sistemas de Informação • Graduação',
-    });
+    setNewUserForm(emptyUserForm());
   };
+
+  const handleRoleChange = (newRole) => {
+    const res = updateUserRole(selectedUser.id, newRole);
+    setRoleError(res.ok ? '' : res.error);
+  };
+
+  const userLoans = selectedUser ? loans.filter((l) => l.userId === selectedUser.id) : [];
+  const userPendingFines = selectedUser
+    ? fines.filter((f) => f.userId === selectedUser.id && f.status === 'Pendente')
+    : [];
 
   return (
     <div>
@@ -57,9 +105,10 @@ const Usuarios = () => {
             </span>
             <UsersIcon size={18} color="#185266" />
           </div>
-          <div className="kpi-value">{869 + users.length}</div>
+          <div className="kpi-value">{users.length}</div>
           <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-            Comunidade acadêmica
+            {users.filter((u) => u.role === 'aluno').length} leitores •{' '}
+            {users.filter((u) => u.role !== 'aluno').length} da equipe
           </div>
         </div>
 
@@ -70,22 +119,22 @@ const Usuarios = () => {
             </span>
             <UserCheck size={18} color="#185266" />
           </div>
-          <div className="kpi-value">{836 + activeCount}</div>
+          <div className="kpi-value">{activeCount}</div>
           <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-            96,1% dos cadastros
+            {formatPercent(activePct)} dos cadastros
           </div>
         </div>
 
         <div className="kpi-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--color-deep-teal)' }}>
-              Novos neste mês
+              Novos cadastros
             </span>
             <UserPlus size={18} color="#185266" />
           </div>
-          <div className="kpi-value">18</div>
+          <div className="kpi-value">{newLast30Days}</div>
           <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-            Cadastros em outubro
+            Nos últimos 30 dias
           </div>
         </div>
 
@@ -96,9 +145,9 @@ const Usuarios = () => {
             </span>
             <AlertCircle size={18} color="#D68C45" />
           </div>
-          <div className="kpi-value">0{suspendedCount}</div>
+          <div className="kpi-value">{String(suspendedCount).padStart(2, '0')}</div>
           <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--color-warning-text)' }}>
-            Devoluções / multas em atraso
+            Devoluções em atraso / multas pendentes
           </div>
         </div>
       </div>
@@ -119,8 +168,16 @@ const Usuarios = () => {
             Lista de Usuários
           </h1>
 
-          <button className="btn btn-primary" onClick={() => setShowNewUserModal(true)}>
-            <UserPlus size={16} /> + Novo Usuário
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setFormError('');
+              setNewUserForm(emptyUserForm());
+              setShowNewUserModal(true);
+            }}
+          >
+            <UserPlus size={16} /> Novo Usuário
           </button>
         </div>
 
@@ -143,6 +200,7 @@ const Usuarios = () => {
               className="input-field"
               style={{ width: '100%', paddingLeft: '36px' }}
               placeholder="Buscar por nome, e-mail institucional ou matrícula..."
+              aria-label="Buscar usuários"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -150,6 +208,7 @@ const Usuarios = () => {
 
           <select
             className="select-field"
+            aria-label="Filtrar por status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
@@ -174,76 +233,81 @@ const Usuarios = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.map((user) => {
-                const userLoansCount = loans.filter((l) => l.userId === user.id).length;
-                return (
-                  <tr key={user.id}>
-                    <td>
-                      <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)' }}>
-                        {user.name}
-                      </div>
-                      <div className="mono-code" style={{ color: 'var(--color-text-secondary)' }}>
-                        {user.email}
-                      </div>
-                    </td>
+              {filteredUsers.length === 0 && (
+                <tr className="empty-row">
+                  <td colSpan="5">Nenhum usuário encontrado para os filtros informados.</td>
+                </tr>
+              )}
+              {filteredUsers.map((user) => (
+                <tr key={user.id}>
+                  <td>
+                    <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)' }}>
+                      {user.name}
+                    </div>
+                    <div className="mono-code" style={{ color: 'var(--color-text-secondary)' }}>
+                      {user.email}
+                    </div>
+                  </td>
 
-                    <td className="mono-code" style={{ fontWeight: 700 }}>
-                      {user.matricula}
-                    </td>
+                  <td className="mono-code" style={{ fontWeight: 700 }}>
+                    {user.matricula}
+                  </td>
 
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{user.roleLabel}</div>
-                      <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-                        {user.department}
-                      </div>
-                    </td>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{user.roleLabel}</div>
+                    <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
+                      {user.department}
+                    </div>
+                  </td>
 
-                    <td>
-                      {user.status === 'Suspenso' ? (
-                        <>
-                          <span className="badge badge-danger">• Suspenso</span>
-                          <div style={{ fontSize: '12px', color: 'var(--color-danger-text)', marginTop: '4px', fontWeight: 600 }}>
-                            Pendência financeira / atraso
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <span className="badge badge-success">• Ativo</span>
-                          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                            {userLoansCount === 0
-                              ? 'Sem empréstimos'
-                              : `${userLoansCount} empréstimo(s)`}
-                          </div>
-                        </>
-                      )}
-                    </td>
+                  <td>
+                    {user.status === 'Suspenso' ? (
+                      <>
+                        <span className="badge badge-danger">• Suspenso</span>
+                        <div style={{ fontSize: '12px', color: 'var(--color-danger-text)', marginTop: '4px', fontWeight: 600 }}>
+                          {user.blockReason}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="badge badge-success">• Ativo</span>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                          {user.role !== 'aluno'
+                            ? 'Equipe da biblioteca'
+                            : user.activeLoansCount === 0
+                            ? 'Sem empréstimos'
+                            : `${user.activeLoansCount} de ${BUSINESS_RULES.MAX_ACTIVE_LOANS} empréstimo(s)`}
+                        </div>
+                      </>
+                    )}
+                  </td>
 
-                    <td style={{ textAlign: 'right' }}>
-                      <button
-                        className="btn btn-ghost"
-                        style={{ fontWeight: 700 }}
-                        onClick={() => setSelectedUserModal(user)}
-                      >
-                        Ver ficha &rsaquo;
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+                  <td style={{ textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontWeight: 700 }}
+                      onClick={() => openUser(user.id)}
+                    >
+                      Ver ficha &rsaquo;
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
       {/* Modal Ficha do Usuário + Gerenciar Perfis de Acesso (RBAC / Promoção Admin) */}
-      {selectedUserModal && (
-        <div className="modal-backdrop" onClick={() => setSelectedUserModal(null)}>
-          <div className="modal-box teal-top" onClick={(e) => e.stopPropagation()}>
+      {selectedUser && (
+        <div className="modal-backdrop" onClick={() => setSelectedUserId(null)}>
+          <div className="modal-box teal-top" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h2 className="serif-title" style={{ fontSize: '26px', marginBottom: '4px' }}>
               Ficha Cadastral e Perfil de Acesso
             </h2>
             <p style={{ margin: '0 0 18px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-              {selectedUserModal.fullName} • Matrícula <span className="mono-code">{selectedUserModal.matricula}</span>
+              {selectedUser.fullName} • Matrícula <span className="mono-code">{selectedUser.matricula}</span>
             </p>
 
             <div
@@ -257,14 +321,38 @@ const Usuarios = () => {
               }}
             >
               <div>
-                • E-mail Institucional: <strong>{selectedUserModal.email}</strong>
+                • E-mail Institucional: <strong>{selectedUser.email}</strong>
               </div>
               <div>
-                • Vínculo / Curso: <strong>{selectedUserModal.department}</strong>
+                • Vínculo / Curso: <strong>{selectedUser.department}</strong>
               </div>
               <div>
-                • Situação Cadastral: <strong>{selectedUserModal.status}</strong>
+                • Situação Cadastral:{' '}
+                <strong style={{ color: selectedUser.status === 'Suspenso' ? 'var(--color-danger-text)' : 'var(--color-success-text)' }}>
+                  {selectedUser.status}
+                  {selectedUser.blockReason ? ` — ${selectedUser.blockReason} (RF05)` : ''}
+                </strong>
               </div>
+              {selectedUser.role === 'aluno' && (
+                <div>
+                  • Empréstimos ativos:{' '}
+                  <strong>
+                    {selectedUser.activeLoansCount} de {BUSINESS_RULES.MAX_ACTIVE_LOANS}
+                  </strong>
+                  {userLoans.length > 0 && (
+                    <ul style={{ margin: '4px 0 0', paddingLeft: '20px', fontSize: '13px' }}>
+                      {userLoans.map((l) => (
+                        <li key={l.id}>
+                          {l.bookTitle} (<span className="mono-code">{l.tombo}</span>) — dev. {l.dueDate}
+                          {l.daysOverdue > 0 && (
+                            <strong style={{ color: 'var(--color-danger-text)' }}> • {l.daysOverdue} dia(s) de atraso</strong>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Controle de Perfis RBAC exclusivo para Gestor/Admin */}
@@ -279,23 +367,32 @@ const Usuarios = () => {
               <div style={{ fontWeight: 700, color: 'var(--color-deep-teal)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Shield size={16} /> Gerenciar Perfil de Acesso (RBAC)
               </div>
-              {currentUser.role === 'admin' ? (
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <select
-                    className="select-field"
-                    style={{ flex: 1 }}
-                    value={selectedUserModal.role}
-                    onChange={(e) => {
-                      const newRole = e.target.value;
-                      updateUserRole(selectedUserModal.id, newRole);
-                      setSelectedUserModal({ ...selectedUserModal, role: newRole });
-                    }}
-                  >
-                    <option value="aluno">Leitor / Aluno (Consulta e Reserva)</option>
-                    <option value="bibliotecario">Funcionário / Bibliotecário (Circulação e Acervo)</option>
-                    <option value="admin">Gestor / Administrador (Acesso Total e Relatórios)</option>
-                  </select>
-                </div>
+              {isAdmin ? (
+                selectedUser.id === currentUser.id ? (
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                    Por segurança, o administrador não pode alterar o próprio perfil de acesso.
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      className="select-field"
+                      aria-label="Perfil de acesso"
+                      style={{ width: '100%' }}
+                      value={selectedUser.role}
+                      onChange={(e) => handleRoleChange(e.target.value)}
+                    >
+                      <option value="aluno">Leitor / Aluno (Consulta e Reserva)</option>
+                      <option value="bibliotecario">Funcionário / Bibliotecário (Circulação e Acervo)</option>
+                      <option value="admin">Gestor / Administrador (Acesso Total e Relatórios)</option>
+                    </select>
+                    {roleError && (
+                      <div role="alert" className="form-error" style={{ marginTop: '10px' }}>
+                        <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
+                        <span>{roleError}</span>
+                      </div>
+                    )}
+                  </>
+                )
               ) : (
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
                   Apenas o perfil <strong>Gestor / Administrador</strong> pode alterar níveis de permissão ou promover usuários.
@@ -303,10 +400,9 @@ const Usuarios = () => {
               )}
             </div>
 
-            {/* Quitação de Multas Pendentes no Balcão */}
-            {fines
-              .filter((f) => f.userId === selectedUserModal.id && f.status === 'Pendente')
-              .map((fine) => (
+            {/* Pendências financeiras: multas lançadas (quitação no balcão) e atrasos em aberto */}
+            {userPendingFines.map((fine) =>
+              fine.accruing ? (
                 <div
                   key={fine.id}
                   style={{
@@ -319,30 +415,61 @@ const Usuarios = () => {
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     gap: '12px',
+                    flexWrap: 'wrap',
                   }}
                 >
                   <div>
                     <div style={{ fontWeight: 700, color: 'var(--color-danger-text)' }}>
-                      Multa Pendente: R$ {fine.amount.toFixed(2).replace('.', ',')}
+                      Devolução em atraso — multa acumulada: {formatCurrency(fine.amount)}
                     </div>
                     <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
-                      {fine.bookTitle} ({fine.daysOverdue} dias de atraso)
+                      {fine.bookTitle} ({fine.daysOverdue} dia(s) de atraso). A multa é calculada e quitada no registro da devolução.
                     </div>
                   </div>
                   <button
-                    className="btn btn-primary"
+                    type="button"
+                    className="btn btn-teal"
                     onClick={() => {
-                      payFine(fine.id);
-                      setSelectedUserModal({ ...selectedUserModal, status: 'Ativo' });
+                      setSelectedUserId(null);
+                      setActiveTab('Empréstimos', { type: 'search', query: fine.tombo });
                     }}
                   >
+                    Registrar Devolução
+                  </button>
+                </div>
+              ) : (
+                <div
+                  key={fine.id}
+                  style={{
+                    backgroundColor: 'var(--color-danger-bg)',
+                    border: '1px solid #E5B4B4',
+                    borderRadius: '8px',
+                    padding: '14px 16px',
+                    marginBottom: '16px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, color: 'var(--color-danger-text)' }}>
+                      Multa Pendente {fine.id}: {formatCurrency(fine.amount)}
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)' }}>
+                      {fine.bookTitle} ({fine.daysOverdue} dia(s) de atraso) • lançada em {fine.date}
+                    </div>
+                  </div>
+                  <button type="button" className="btn btn-primary" onClick={() => payFine(fine.id)}>
                     Quitar Multa Agora
                   </button>
                 </div>
-              ))}
+              )
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="btn btn-outline" onClick={() => setSelectedUserModal(null)}>
+              <button type="button" className="btn btn-outline" onClick={() => setSelectedUserId(null)}>
                 Fechar Ficha
               </button>
             </div>
@@ -353,7 +480,7 @@ const Usuarios = () => {
       {/* Modal Novo Usuário (Controlado pelo Funcionário/Admin — corrige item 6 da AP1) */}
       {showNewUserModal && (
         <div className="modal-backdrop" onClick={() => setShowNewUserModal(false)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-box" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h2 className="serif-title" style={{ fontSize: '26px', marginBottom: '4px' }}>
               Cadastrar Novo Usuário Institucional
             </h2>
@@ -363,10 +490,11 @@ const Usuarios = () => {
 
             <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '5px' }}>
+                <label htmlFor="user-name" style={labelStyle}>
                   Nome Completo *
                 </label>
                 <input
+                  id="user-name"
                   required
                   className="input-field"
                   style={{ width: '100%' }}
@@ -378,10 +506,11 @@ const Usuarios = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '5px' }}>
+                  <label htmlFor="user-matricula" style={labelStyle}>
                     Matrícula / Código Funcional *
                   </label>
                   <input
+                    id="user-matricula"
                     required
                     className="input-field"
                     style={{ width: '100%' }}
@@ -391,17 +520,18 @@ const Usuarios = () => {
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '5px' }}>
+                  <label htmlFor="user-role" style={labelStyle}>
                     Perfil de Acesso *
                   </label>
                   <select
+                    id="user-role"
                     className="select-field"
                     style={{ width: '100%' }}
                     value={newUserForm.role}
                     onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
                   >
                     <option value="aluno">Leitor / Aluno</option>
-                    {currentUser.role === 'admin' && (
+                    {isAdmin && (
                       <>
                         <option value="bibliotecario">Funcionário / Bibliotecário</option>
                         <option value="admin">Gestor / Administrador</option>
@@ -411,20 +541,68 @@ const Usuarios = () => {
                 </div>
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: newUserForm.role === 'aluno' ? '1fr 1fr' : '1fr', gap: '12px' }}>
+                {newUserForm.role === 'aluno' && (
+                  <div>
+                    <label htmlFor="user-type" style={labelStyle}>
+                      Tipo de Vínculo *
+                    </label>
+                    <select
+                      id="user-type"
+                      className="select-field"
+                      style={{ width: '100%' }}
+                      value={newUserForm.readerType}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, readerType: e.target.value })}
+                    >
+                      <option value="Estudante">Estudante</option>
+                      <option value="Docente">Docente</option>
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label htmlFor="user-department" style={labelStyle}>
+                    Curso / Setor
+                  </label>
+                  <input
+                    id="user-department"
+                    className="input-field"
+                    style={{ width: '100%' }}
+                    placeholder="Ex.: Sistemas de Informação • Graduação"
+                    value={newUserForm.department}
+                    onChange={(e) => setNewUserForm({ ...newUserForm, department: e.target.value })}
+                  />
+                </div>
+              </div>
+
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '5px' }}>
-                  E-mail Institucional (@rede.ulbra.br ou @ulbra.br) *
+                <label htmlFor="user-email" style={labelStyle}>
+                  E-mail Institucional *
                 </label>
                 <input
+                  id="user-email"
                   required
                   type="email"
                   className="input-field"
                   style={{ width: '100%' }}
-                  placeholder="joao.martins@rede.ulbra.br"
+                  placeholder={
+                    newUserForm.role === 'aluno' && newUserForm.readerType === 'Estudante'
+                      ? 'joao.martins@rede.ulbra.br'
+                      : 'joao.martins@ulbra.br'
+                  }
                   value={newUserForm.email}
                   onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })}
                 />
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                  Estudantes: @rede.ulbra.br • Docentes e funcionários: @ulbra.br
+                </div>
               </div>
+
+              {formError && (
+                <div role="alert" className="form-error">
+                  <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
+                  <span>{formError}</span>
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
                 <button type="button" className="btn btn-outline" onClick={() => setShowNewUserModal(false)}>

@@ -1,10 +1,34 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, LogOut, RefreshCw } from 'lucide-react';
 import { useLibrary } from '../../context/LibraryContext';
+
+const DEMO_PROFILES = [
+  { id: 'u-1', label: 'Mariana Costa (Aluno)' },
+  { id: 'u-6', label: 'Ana Paula Silva (Bibliotecário)' },
+  { id: 'u-7', label: 'Carlos Mendes (Gestor / Admin)' },
+];
 
 const Header = () => {
   const { currentUser, activeTab, selectedBookId, loginAsUser, logout } = useLibrary();
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // Fecha o menu ao clicar fora dele ou pressionar Esc
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const handleClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [menuOpen]);
 
   const getHeaderTitle = () => {
     if (!currentUser) return '';
@@ -20,8 +44,11 @@ const Header = () => {
     if (selectedBookId && activeTab === 'Catálogo') {
       return 'Catálogo — Detalhes da Obra e Exemplares';
     }
+    if (activeTab === 'Dashboard') return 'Painel de Gestão — Biblioteca Central';
     if (activeTab === 'Catálogo') return 'Catálogo — Gestão de Acervo';
     if (activeTab === 'Empréstimos') return 'Circulação de Balcão — Empréstimos e Devoluções';
+    if (activeTab === 'Reservas') return 'Reservas — Retiradas no Balcão e Fila de Espera';
+    if (activeTab === 'Usuários') return 'Usuários — Cadastros e Perfis de Acesso';
     if (activeTab === 'Inventário') return 'Controle de Inventário e Patrimônio Físico';
     if (activeTab === 'Relatórios') return 'Relatórios Gerenciais e Auditoria de Estoque';
     return activeTab;
@@ -48,8 +75,11 @@ const Header = () => {
       </div>
 
       {/* Identificação Padronizada do Usuário Logado + Seletor Rápido de Perfil */}
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative' }} ref={menuRef}>
         <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
           onClick={() => setMenuOpen((prev) => !prev)}
           style={{
             display: 'flex',
@@ -88,6 +118,7 @@ const Header = () => {
 
         {menuOpen && (
           <div
+            role="menu"
             style={{
               position: 'absolute',
               right: 0,
@@ -108,38 +139,37 @@ const Header = () => {
             >
               Alternar Perfil de Demonstração
             </div>
-            <button
-              className="btn-ghost"
-              style={{ width: '100%', justifyContent: 'flex-start', fontSize: '13px' }}
-              onClick={() => {
-                loginAsUser('u-1');
-                setMenuOpen(false);
-              }}
-            >
-              <RefreshCw size={14} /> Mariana Costa (Aluno)
-            </button>
-            <button
-              className="btn-ghost"
-              style={{ width: '100%', justifyContent: 'flex-start', fontSize: '13px' }}
-              onClick={() => {
-                loginAsUser('u-6');
-                setMenuOpen(false);
-              }}
-            >
-              <RefreshCw size={14} /> Ana Paula Silva (Bibliotecário)
-            </button>
-            <button
-              className="btn-ghost"
-              style={{ width: '100%', justifyContent: 'flex-start', fontSize: '13px' }}
-              onClick={() => {
-                loginAsUser('u-7');
-                setMenuOpen(false);
-              }}
-            >
-              <RefreshCw size={14} /> Carlos Mendes (Gestor / Admin)
-            </button>
+            {DEMO_PROFILES.map((profile) => {
+              const isCurrent = currentUser?.id === profile.id;
+              return (
+                <button
+                  key={profile.id}
+                  type="button"
+                  role="menuitem"
+                  className="btn-ghost"
+                  disabled={isCurrent}
+                  style={{
+                    width: '100%',
+                    justifyContent: 'flex-start',
+                    fontSize: '13px',
+                    fontWeight: isCurrent ? 700 : 500,
+                    opacity: isCurrent ? 0.6 : 1,
+                    cursor: isCurrent ? 'default' : 'pointer',
+                  }}
+                  onClick={() => {
+                    loginAsUser(profile.id);
+                    setMenuOpen(false);
+                  }}
+                >
+                  <RefreshCw size={14} /> {profile.label}
+                  {isCurrent ? ' • atual' : ''}
+                </button>
+              );
+            })}
             <div style={{ borderTop: '1px solid #ECE7DF', marginTop: '6px', paddingTop: '6px' }}>
               <button
+                type="button"
+                role="menuitem"
                 className="btn-ghost"
                 style={{
                   width: '100%',
