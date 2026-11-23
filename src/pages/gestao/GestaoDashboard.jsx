@@ -115,7 +115,7 @@ const GestaoDashboard = () => {
           </div>
           <div className="kpi-value">{String(reservations.length).padStart(2, '0')}</div>
           <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--color-warning-text)' }}>
-            {readyReservations} prontas • {waitingReservations} em espera
+            {readyReservations} {readyReservations === 1 ? 'pronta' : 'prontas'} • {waitingReservations} em espera
           </div>
         </div>
 
@@ -331,7 +331,7 @@ const GestaoDashboard = () => {
                 <ChevronRight size={16} color="#525E62" />
               </div>
               <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', marginTop: '6px' }}>
-                {readyReservations} prontas para retirada
+                {readyReservations} {readyReservations === 1 ? 'pronta' : 'prontas'} para retirada
               </div>
             </button>
 

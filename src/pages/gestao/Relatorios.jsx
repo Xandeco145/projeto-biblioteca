@@ -96,8 +96,20 @@ const Relatorios = () => {
   const totalItems = inventoryItems.length || 1;
   const balance = BALANCE_ROWS.map((row) => {
     const count = inventoryItems.filter((i) => i.status === row.status).length;
-    return { ...row, count, pct: (count / totalItems) * 100 };
+    const pct = (count / totalItems) * 100;
+    return { ...row, count, pct, pctShown: Math.floor(pct) };
   });
+  // Arredondamento pelo maior resto: os percentuais exibidos somam exatamente o total (100%),
+  // em vez de 101% ou 99% quando cada linha é arredondada separadamente.
+  let leftover = Math.round(balance.reduce((s, b) => s + b.pct, 0)) - balance.reduce((s, b) => s + b.pctShown, 0);
+  [...balance]
+    .sort((a, b) => (b.pct - b.pctShown) - (a.pct - a.pctShown))
+    .forEach((b) => {
+      if (leftover > 0 && b.pct > b.pctShown) {
+        b.pctShown += 1;
+        leftover -= 1;
+      }
+    });
 
   // ---- Exportações ----
   const handleExportReport = () => {
@@ -114,7 +126,7 @@ const Relatorios = () => {
         {
           heading: 'Balanço do inventário físico',
           headers: ['Situação', 'Quantidade', 'Percentual'],
-          rows: balance.map((b) => [b.status, b.count, formatPercent(b.pct)]),
+          rows: balance.map((b) => [b.status, b.count, formatPercent(b.pctShown, 0)]),
         },
       ],
     });
@@ -297,7 +309,7 @@ const Relatorios = () => {
                 >
                   <span>{row.label}</span>
                   <span style={{ color: row.color, whiteSpace: 'nowrap' }}>
-                    {row.count} ex. ({formatPercent(row.pct, 0)})
+                    {row.count} ex. ({formatPercent(row.pctShown, 0)})
                   </span>
                 </div>
                 <div

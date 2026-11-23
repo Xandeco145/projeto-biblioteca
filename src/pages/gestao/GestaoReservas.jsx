@@ -114,7 +114,7 @@ const GestaoReservas = () => {
             {String(reservations.length).padStart(2, '0')}
           </div>
           <div className="overline-label">
-            {readyCount} PRONTAS • {waitingCount} EM ESPERA
+            {readyCount} {readyCount === 1 ? 'PRONTA' : 'PRONTAS'} • {waitingCount} EM ESPERA
           </div>
         </div>
       </div>
@@ -246,7 +246,7 @@ const GestaoReservas = () => {
                       ) : (
                         <span className="badge badge-success">• Pronta para retirada</span>
                       )}
-                      <div className="mono-code" style={{ marginTop: '4px', color: 'var(--color-text-secondary)' }}>
+                      <div className="mono-code" style={{ marginTop: '4px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
                         Exemplar {res.tomboAllocated}
                       </div>
                     </>
